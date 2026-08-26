@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { registry } from "../registry.js";
+import { installPlugin } from "../plugin-installer.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -14,14 +15,69 @@ export async function handlePlugins(
   res: ServerResponse,
   pathname: string
 ): Promise<boolean> {
-  // GET /api/plugins
+  // POST /api/plugins/install — remote git/npm
+  if (req.method === "POST" && pathname === "/api/plugins/install") {
+    try {
+      const body = JSON.parse(await readBody(req)) as {
+        id: string;
+        source: { type: "git" | "npm"; ref: string; version?: string };
+        name?: string;
+        version?: string;
+        description?: string;
+        enabled?: boolean;
+      };
+      if (!body.id || !body.source?.type || !body.source?.ref) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "id and source.type/ref required" }));
+        return true;
+      }
+
+      const result = await installPlugin({
+        id: body.id,
+        source: body.source,
+      });
+
+      if (!result.ok) {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Install failed", detail: result.detail }));
+        return true;
+      }
+
+      const record = registry.register({
+        id: body.id,
+        name: body.name || body.id,
+        version: body.version || body.source.version || "0.0.0",
+        description: body.description,
+        source: {
+          type: body.source.type,
+          ref: body.source.ref,
+          version: body.source.version,
+          path: result.path,
+        },
+        enabled: body.enabled ?? true,
+      });
+
+      res.writeHead(201, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          plugin: record,
+          install: result,
+          note: "Restart Core (or wait for rediscovery) to load the new plugin factory",
+        })
+      );
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid body" }));
+    }
+    return true;
+  }
+
   if (req.method === "GET" && pathname === "/api/plugins") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ plugins: registry.list() }));
     return true;
   }
 
-  // POST /api/plugins
   if (req.method === "POST" && pathname === "/api/plugins") {
     try {
       const body = JSON.parse(await readBody(req));
@@ -42,7 +98,6 @@ export async function handlePlugins(
     return true;
   }
 
-  // GET /api/plugins/:id
   const match = pathname.match(/^\/api\/plugins\/([^/]+)(\/(enable|disable))?$/);
   if (match) {
     const id = decodeURIComponent(match[1]);
