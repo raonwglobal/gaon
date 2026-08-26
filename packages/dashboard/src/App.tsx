@@ -5,14 +5,17 @@ import {
   enablePlugin,
   fetchBuiltins,
   fetchConfig,
+  fetchLogs,
   fetchMetrics,
   fetchPlugins,
   fetchSessions,
+  installRemotePlugin,
   registerPlugin,
   syncToCore,
   terminateSession,
   updateConfig,
   updatePluginConfig,
+  type LogEntry,
 } from "./api";
 import type {
   MetricsPayload,
@@ -38,6 +41,8 @@ export function App() {
   const [plugins, setPlugins] = useState<PluginRecord[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [metrics, setMetrics] = useState<MetricsPayload | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logLevel, setLogLevel] = useState("");
   const [config, setConfig] = useState<PlatformConfig | null>(null);
   const [builtins, setBuiltins] = useState<string[]>(["weather", "echo"]);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +56,13 @@ export function App() {
     version: "1.0.0",
     description: "",
     path: "",
+  });
+
+  const [remote, setRemote] = useState({
+    id: "",
+    type: "git" as "git" | "npm",
+    ref: "",
+    version: "",
   });
 
   const [editPluginId, setEditPluginId] = useState<string | null>(null);
@@ -79,6 +91,12 @@ export function App() {
         setSessions(data.sessions || []);
       } else if (tab === "metrics") {
         setMetrics(await fetchMetrics());
+      } else if (tab === "logs") {
+        const data = await fetchLogs({
+          level: logLevel || undefined,
+          limit: 150,
+        });
+        setLogs(data.logs || []);
       } else if (tab === "settings") {
         const data = await fetchConfig();
         setConfig(data.config);
@@ -94,14 +112,14 @@ export function App() {
     } finally {
       setLoading(false);
     }
-  }, [tab]);
+  }, [tab, logLevel]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
   useEffect(() => {
-    if (tab !== "sessions" && tab !== "metrics") return;
+    if (tab !== "sessions" && tab !== "metrics" && tab !== "logs") return;
     const t = setInterval(() => void reload(), 10_000);
     return () => clearInterval(t);
   }, [tab, reload]);
@@ -121,9 +139,9 @@ export function App() {
 
     if (!builtins.includes(id)) {
       const ok = window.confirm(
-        `"${id}" is not in Core PLUGIN_FACTORIES (known: ${builtins.join(
+        `"${id}" is not in Core factories (known: ${builtins.join(
           ", "
-        )}).\n\nMetadata can still be registered, but tools will not load until you add a factory in packages/core/src/plugins/index.ts.\n\nContinue?`
+        )}). Continue?`
       );
       if (!ok) return;
     }
@@ -139,6 +157,30 @@ export function App() {
       });
       setMessage(`Registered plugin: ${id}`);
       setForm({ id: "", name: "", version: "1.0.0", description: "", path: "" });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function onRemoteInstall(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setMessage(null);
+    try {
+      await installRemotePlugin({
+        id: remote.id.trim(),
+        source: {
+          type: remote.type,
+          ref: remote.ref.trim(),
+          version: remote.version.trim() || undefined,
+        },
+        enabled: true,
+      });
+      setMessage(
+        `Installed ${remote.id} from ${remote.type}. Restart Core to load factory.`
+      );
+      setRemote({ id: "", type: "git", ref: "", version: "" });
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -181,20 +223,23 @@ export function App() {
       }
       const data = await updateConfig(partial);
       setConfig(data.config);
-      setMessage("Platform config updated");
+      setMessage("Platform config updated (synced to Core)");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  const tabs: Tab[] = ["plugins", "sessions", "metrics", "logs", "settings"];
 
   return (
     <div className="app">
       <header>
         <h1>MCP SSE Platform</h1>
         <nav className="nav">
-          {(["plugins", "sessions", "metrics", "settings"] as Tab[]).map((t) => (
+          {tabs.map((t) => (
             <button
               key={t}
+              type="button"
               className={tab === t ? "active" : ""}
               onClick={() => setTab(t)}
             >
@@ -211,17 +256,17 @@ export function App() {
       {tab === "plugins" && (
         <>
           <div className="card">
-            <h2>Register Plugin</h2>
+            <h2>Register Local Plugin</h2>
             <form onSubmit={onRegister}>
               <div className="form-grid">
                 <input
                   required
-                  placeholder="id (e.g. weather)"
+                  placeholder="id"
                   value={form.id}
                   onChange={(e) => setForm({ ...form, id: e.target.value })}
                 />
                 <input
-                  placeholder="display name"
+                  placeholder="name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
@@ -231,23 +276,56 @@ export function App() {
                   onChange={(e) => setForm({ ...form, version: e.target.value })}
                 />
                 <input
-                  placeholder="description"
-                  value={form.description}
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                />
-                <input
-                  placeholder="local path (optional)"
+                  placeholder="path"
                   value={form.path}
                   onChange={(e) => setForm({ ...form, path: e.target.value })}
                 />
                 <button type="submit">Register</button>
               </div>
             </form>
-            <p className="muted" style={{ marginTop: 8 }}>
-              Core builtins: <code>{builtins.join(", ")}</code>. IDs not in this
-              list will warn before register.
+            <p className="muted">Builtins: {builtins.join(", ")}</p>
+          </div>
+
+          <div className="card">
+            <h2>Install from Git / npm</h2>
+            <form onSubmit={onRemoteInstall}>
+              <div className="form-grid">
+                <input
+                  required
+                  placeholder="plugin id"
+                  value={remote.id}
+                  onChange={(e) => setRemote({ ...remote, id: e.target.value })}
+                />
+                <select
+                  value={remote.type}
+                  onChange={(e) =>
+                    setRemote({
+                      ...remote,
+                      type: e.target.value as "git" | "npm",
+                    })
+                  }
+                >
+                  <option value="git">git</option>
+                  <option value="npm">npm</option>
+                </select>
+                <input
+                  required
+                  placeholder={remote.type === "git" ? "git URL" : "package name"}
+                  value={remote.ref}
+                  onChange={(e) => setRemote({ ...remote, ref: e.target.value })}
+                />
+                <input
+                  placeholder="branch/tag or version (optional)"
+                  value={remote.version}
+                  onChange={(e) =>
+                    setRemote({ ...remote, version: e.target.value })
+                  }
+                />
+                <button type="submit">Install</button>
+              </div>
+            </form>
+            <p className="muted">
+              Clones/installs into PLUGINS_DIR. Restart Core to pick up the factory.
             </p>
           </div>
 
@@ -283,9 +361,7 @@ export function App() {
                 onClick={() =>
                   syncToCore()
                     .then((r) =>
-                      setMessage(
-                        r.ok ? "Synced to Core" : `Sync failed: ${r.detail}`
-                      )
+                      setMessage(r.ok ? "Synced to Core" : `Sync: ${JSON.stringify(r)}`)
                     )
                     .catch((e) => setError(String(e)))
                 }
@@ -297,9 +373,7 @@ export function App() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Name</th>
-                  <th>Version</th>
-                  <th>Builtin</th>
+                  <th>Source</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
@@ -307,18 +381,11 @@ export function App() {
               <tbody>
                 {plugins.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.id}</td>
-                    <td>{p.name}</td>
-                    <td>{p.version}</td>
                     <td>
-                      <span
-                        className={`badge ${
-                          builtins.includes(p.id) ? "ok" : "warn"
-                        }`}
-                      >
-                        {builtins.includes(p.id) ? "yes" : "no"}
-                      </span>
+                      {p.id}{" "}
+                      <span className="muted">{p.version}</span>
                     </td>
+                    <td className="mono">{p.source?.type || "local"}</td>
                     <td>
                       <span className={`badge ${p.enabled ? "ok" : "off"}`}>
                         {p.enabled ? "enabled" : "disabled"}
@@ -354,7 +421,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (!window.confirm(`Delete plugin "${p.id}"?`)) return;
+                          if (!window.confirm(`Delete ${p.id}?`)) return;
                           deletePlugin(p.id)
                             .then(reload)
                             .catch((e) => setError(String(e)));
@@ -367,9 +434,6 @@ export function App() {
                 ))}
               </tbody>
             </table>
-            {plugins.length === 0 && (
-              <p className="muted">No plugins registered yet.</p>
-            )}
           </div>
         </>
       )}
@@ -377,19 +441,18 @@ export function App() {
       {tab === "sessions" && (
         <div className="card">
           <div className="card-header">
-            <h2>Active Sessions</h2>
+            <h2>Sessions</h2>
             <button type="button" onClick={() => void reload()}>
               Refresh
             </button>
           </div>
-          <p className="muted">Auto-refreshes every 10s</p>
           <table>
             <thead>
               <tr>
                 <th>ID</th>
                 <th>Created</th>
                 <th>Last Activity</th>
-                <th>Actions</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -398,16 +461,13 @@ export function App() {
                   <td className="mono">{s.id.slice(0, 8)}…</td>
                   <td>{new Date(s.createdAt).toLocaleString()}</td>
                   <td>{new Date(s.lastActivity).toLocaleString()}</td>
-                  <td className="actions">
+                  <td>
                     <button
                       type="button"
                       onClick={() => {
-                        if (!window.confirm("Terminate this session?")) return;
+                        if (!window.confirm("Terminate?")) return;
                         terminateSession(s.id)
-                          .then(() => {
-                            setMessage("Session terminated");
-                            return reload();
-                          })
+                          .then(reload)
                           .catch((e) => setError(String(e)));
                       }}
                     >
@@ -418,9 +478,6 @@ export function App() {
               ))}
             </tbody>
           </table>
-          {sessions.length === 0 && (
-            <p className="muted">No active sessions.</p>
-          )}
         </div>
       )}
 
@@ -428,63 +485,84 @@ export function App() {
         <>
           <div className="metrics-grid">
             <div className="metric-card">
-              <div className="metric-label">Core status</div>
+              <div className="metric-label">Core</div>
+              <div className="metric-value">{metrics?.core?.status ?? "-"}</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Sessions</div>
+              <div className="metric-value">{metrics?.core?.sessions ?? "-"}</div>
+            </div>
+            <div className="metric-card">
+              <div className="metric-label">Plugins</div>
               <div className="metric-value">
-                {metrics?.core?.status ?? "unknown"}
+                {metrics?.plugins?.enabled ?? "-"}/{metrics?.plugins?.total ?? "-"}
               </div>
             </div>
             <div className="metric-card">
-              <div className="metric-label">Active sessions</div>
+              <div className="metric-label">Uptime</div>
               <div className="metric-value">
-                {metrics?.core?.sessions ?? "-"}
-              </div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Plugins enabled</div>
-              <div className="metric-value">
-                {metrics?.plugins?.enabled ?? "-"}
-                <span className="metric-sub">
-                  / {metrics?.plugins?.total ?? "-"}
-                </span>
-              </div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Core uptime</div>
-              <div className="metric-value">
-                {formatUptime(metrics?.core?.uptime)}
-              </div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-label">Control uptime</div>
-              <div className="metric-value">
-                {formatUptime(metrics?.uptime)}
+                {formatUptime(metrics?.core?.uptime as number | undefined)}
               </div>
             </div>
           </div>
           <div className="card">
-            <div className="card-header">
-              <h2>Raw metrics</h2>
+            <pre className="code-block">{JSON.stringify(metrics, null, 2)}</pre>
+          </div>
+        </>
+      )}
+
+      {tab === "logs" && (
+        <div className="card">
+          <div className="card-header">
+            <h2>Structured Logs</h2>
+            <div className="row-actions" style={{ marginTop: 0 }}>
+              <select
+                value={logLevel}
+                onChange={(e) => setLogLevel(e.target.value)}
+              >
+                <option value="">all</option>
+                <option value="debug">debug</option>
+                <option value="info">info</option>
+                <option value="warn">warn</option>
+                <option value="error">error</option>
+              </select>
               <button type="button" onClick={() => void reload()}>
                 Refresh
               </button>
             </div>
-            <pre className="code-block">
-              {JSON.stringify(metrics, null, 2)}
-            </pre>
           </div>
-        </>
+          <p className="muted">Auto-refresh 10s · ring buffer from Core</p>
+          <div className="log-list">
+            {logs
+              .slice()
+              .reverse()
+              .map((l, i) => (
+                <div key={`${l.ts}-${i}`} className={`log-line level-${l.level}`}>
+                  <span className="log-ts">
+                    {new Date(l.ts).toLocaleTimeString()}
+                  </span>
+                  <span className="log-level">{l.level}</span>
+                  <span className="log-msg">{l.message}</span>
+                  {l.context && (
+                    <span className="log-ctx">
+                      {JSON.stringify(l.context)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            {logs.length === 0 && <p className="muted">No logs yet.</p>}
+          </div>
+        </div>
       )}
 
       {tab === "settings" && (
         <>
           <div className="card">
             <h2>Admin Token</h2>
-            <p className="muted">Control Plane auth (ADMIN_TOKEN)</p>
             <input
               className="full"
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="Admin token"
             />
             <div className="row-actions">
               <button type="button" onClick={saveToken}>
@@ -492,12 +570,11 @@ export function App() {
               </button>
             </div>
           </div>
-
           <div className="card">
             <h2>Platform Config</h2>
             <form onSubmit={(e) => void savePlatformConfig(e)}>
               <label className="field">
-                <span>Allowed origins (comma-separated)</span>
+                <span>Allowed origins</span>
                 <input
                   value={platformForm.allowedOrigins}
                   onChange={(e) =>
@@ -534,27 +611,10 @@ export function App() {
                   }
                 />
               </label>
-              <label className="field">
-                <span>API secret token (optional)</span>
-                <input
-                  value={platformForm.apiSecretToken}
-                  onChange={(e) =>
-                    setPlatformForm({
-                      ...platformForm,
-                      apiSecretToken: e.target.value,
-                    })
-                  }
-                  placeholder="Leave empty to keep unchanged"
-                />
-              </label>
-              <div className="row-actions">
-                <button type="submit">Save platform config</button>
-              </div>
+              <button type="submit">Save (sync to Core)</button>
             </form>
             {config && (
-              <pre className="code-block" style={{ marginTop: 12 }}>
-                {JSON.stringify(config, null, 2)}
-              </pre>
+              <pre className="code-block">{JSON.stringify(config, null, 2)}</pre>
             )}
           </div>
         </>

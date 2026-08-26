@@ -1,8 +1,8 @@
-# MCP SSE Platform
+# MCP SSE Platform v0.4
 
-플러그인 기반 **MCP over SSE** 플랫폼 (v0.3).
+Plugin-based **MCP over SSE** with admin dashboard.
 
-## 빠른 시작
+## Quick start
 
 ```bash
 npm install
@@ -12,35 +12,34 @@ npm run dev:control
 npm run dev:dashboard
 ```
 
-`.env.example` → `.env` (`ADMIN_TOKEN` / `INTERNAL_TOKEN` 동일 값 권장).
+## Features
 
-## 주요 기능
+| Area | Capability |
+|------|------------|
+| Config | Single-source Control → Core |
+| Plugins | Local discover, Git/npm install, template |
+| Security | CORS, API key, rate limit, optional worker sandbox |
+| Ops | Metrics, structured logs UI, session terminate |
+| Scale | Session affinity via `CLUSTER_PEERS` |
 
-| 기능 | 설명 |
-|------|------|
-| Config 단일 소스 | Dashboard/Control `PUT /api/config` → Core `PUT /internal/config` (
-CORS, rate limit, max sessions) |
-| 플러그인 자동 발견 | `PLUGINS_DIR` 하위 디렉토리 스캔 (`_` 점두 제외) |
-| 관측성 | Core `metrics` — HTTP/tools/세션/와도제한 카운터, `/health`·`/internal/metrics` |
-| 테스트 | `npm test` (vitest) |
+## Remote install
 
-## 플러그인 추가
-
-```bash
-cp -r plugins/_template plugins/my-plugin
-# index.ts · package.json mcpPluginId 수정
-# Core 재시작 (발견) 후 Dashboard에서 Register + Enable
-```
-
-## Docker
+Dashboard → **Install from Git / npm**, or:
 
 ```bash
-docker compose up --build
+curl -X POST http://localhost:3001/api/plugins/install \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"demo","source":{"type":"git","ref":"https://github.com/example/mcp-plugin.git"}}'
 ```
 
-Core 이미지에 `plugins/` 가 포함되며 `PLUGINS_DIR=/app/plugins` 로 로드됩니다.
+Restart Core after install.
 
-## 문서
+## Cluster
+
+See [docs/cluster.md](docs/cluster.md).
+
+## Docs
 
 - [docs/prd.md](docs/prd.md)
 - [docs/architecture.md](docs/architecture.md)

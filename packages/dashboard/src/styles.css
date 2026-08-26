@@ -157,6 +157,7 @@ button.ghost {
 }
 
 .form-grid input,
+.form-grid select,
 .field input,
 input.full,
 .code-area {
@@ -184,6 +185,7 @@ input.full,
   margin-top: 10px;
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .metrics-grid {
@@ -211,12 +213,6 @@ input.full,
   font-weight: 600;
 }
 
-.metric-sub {
-  font-size: 0.9rem;
-  font-weight: 400;
-  color: #64748b;
-}
-
 .code-block,
 .code-area {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -232,4 +228,45 @@ input.full,
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
+}
+
+.log-list {
+  max-height: 480px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.log-line {
+  padding: 4px 6px;
+  border-bottom: 1px solid #1e293b;
+  display: grid;
+  grid-template-columns: 70px 50px 1fr;
+  gap: 8px;
+}
+
+.log-line .log-ctx {
+  grid-column: 2 / -1;
+  color: #94a3b8;
+}
+
+.log-line.level-error {
+  color: #fca5a5;
+}
+
+.log-line.level-warn {
+  color: #fcd34d;
+}
+
+.log-line.level-info {
+  color: #bae6fd;
+}
+
+.log-level {
+  text-transform: uppercase;
+  font-weight: 600;
 }
