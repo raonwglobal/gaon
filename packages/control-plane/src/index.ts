@@ -5,6 +5,7 @@ import { handleSessions } from "./routes/sessions.js";
 import { handleConfig } from "./routes/config.js";
 import { handleMetrics } from "./routes/metrics.js";
 import { handleLogs } from "./routes/logs.js";
+import { handleCatalog } from "./routes/catalog.js";
 import { syncAllToCore } from "./core-sync.js";
 
 const PORT = Number(process.env.CONTROL_PORT ?? 3001);
@@ -73,6 +74,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (await handleConfig(req, res, pathname)) return;
   if (await handleMetrics(req, res, pathname)) return;
   if (await handleLogs(req, res, pathname)) return;
+  if (await handleCatalog(req, res, pathname)) return;
 
   res.writeHead(404, { "Content-Type": "application/json" });
   res.end(JSON.stringify({ error: "Not found" }));

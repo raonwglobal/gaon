@@ -1,25 +1,25 @@
 # MCP SSE Platform Roadmap
 
-## Phase 1 — Core ✅
-## Phase 2 — Control Plane ✅
-## Phase 3 — Dashboard ✅
-## Phase 4 — Operations ✅
+## Phase 1–4 ✅
 
-- [x] Metrics / observability counters
-- [x] Structured log buffer + Dashboard **logs** tab
-- [x] Config single-source sync
+## Phase 5 ✅
 
-## Phase 5 — Advanced ✅
+- Remote install, sandbox workers, affinity, tests
 
-- [x] Plugin template + auto-discovery
-- [x] **npm/Git remote install** (`POST /api/plugins/install`)
-- [x] **Worker sandbox** (`SANDBOX_PLUGINS=true`)
-- [x] **Multi-instance affinity** (`CLUSTER_PEERS`, `INSTANCE_ID`) — see [cluster.md](./cluster.md)
-- [x] Unit tests (vitest)
+## Phase 6 — Plugin Runtime (Container + Hot Reload) ✅ foundation
 
-## Future (optional)
+- [x] Tool Runtime API contract (`packages/plugin-runtime`)
+- [x] `RuntimeCatalog` + epoch + hot upsert
+- [x] `HttpPluginTransport` + `RemotePluginManager`
+- [x] `PLUGIN_RUNTIME=inprocess|container`
+- [x] Core `/internal/catalog/*` + Control `/api/catalog/*`
+- [x] `EndpointOrchestrator` (pre-started endpoints)
+- [ ] Docker Engine orchestrator (image pull/run)
+- [ ] MCP `tools/list_changed` notification on catalog swap
+- [ ] K8s Service-based runtimes
 
-- Full OS-level container sandbox per plugin
-- Shared Redis session store across regions
-- Hot-reload factories without Core restart
+## Optional future
+
+- Redis session store
 - OpenTelemetry export
+- Full OS sandbox profiles per plugin container

@@ -1,6 +1,6 @@
-# MCP SSE Platform v0.4
+# MCP SSE Platform v0.5
 
-Plugin-based **MCP over SSE** with admin dashboard.
+Plugin-based **MCP over SSE** with dual runtime modes.
 
 ## Quick start
 
@@ -12,35 +12,33 @@ npm run dev:control
 npm run dev:dashboard
 ```
 
-## Features
+## Plugin runtime modes
 
-| Area | Capability |
-|------|------------|
-| Config | Single-source Control → Core |
-| Plugins | Local discover, Git/npm install, template |
-| Security | CORS, API key, rate limit, optional worker sandbox |
-| Ops | Metrics, structured logs UI, session terminate |
-| Scale | Session affinity via `CLUSTER_PEERS` |
+### inprocess (default)
 
-## Remote install
+Loads `plugins/*` into Core. Same as v0.4.
 
-Dashboard → **Install from Git / npm**, or:
+### container (hot-reload foundation)
 
 ```bash
-curl -X POST http://localhost:3001/api/plugins/install \
-  -H "X-Admin-Token: $ADMIN_TOKEN" \
+# terminal 1 — tool runtime sidecar
+npm run dev:runtime   # :8080
+
+# terminal 2 — core
+PLUGIN_RUNTIME=container npm run dev:core
+
+# register without restarting core
+curl -X POST http://localhost:3001/api/catalog/deploy \
   -H "Content-Type: application/json" \
-  -d '{"id":"demo","source":{"type":"git","ref":"https://github.com/example/mcp-plugin.git"}}'
+  -d '{"id":"echo","endpoint":"http://127.0.0.1:8080","version":"1.0.0"}'
 ```
 
-Restart Core after install.
-
-## Cluster
-
-See [docs/cluster.md](docs/cluster.md).
+See [docs/plugin-runtime.md](docs/plugin-runtime.md).
 
 ## Docs
 
 - [docs/prd.md](docs/prd.md)
 - [docs/architecture.md](docs/architecture.md)
+- [docs/plugin-runtime.md](docs/plugin-runtime.md)
+- [docs/cluster.md](docs/cluster.md)
 - [docs/roadmap.md](docs/roadmap.md)

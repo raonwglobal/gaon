@@ -24,6 +24,9 @@ import {
   listPeers,
   shouldOwnSession,
 } from "./cluster/affinity.js";
+import { handleCatalogRoutes } from "./server-catalog-routes.js";
+import { getPluginRuntimeMode } from "./runtime/mode.js";
+import { runtimeCatalog } from "./runtime/catalog.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -70,6 +73,8 @@ export function createMcpSseServer(config: ServerConfig) {
         return;
       }
 
+      if (await handleCatalogRoutes(req, res, path)) return;
+
       if (req.method === "GET" && path === "/internal/sessions") {
         metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -107,6 +112,8 @@ export function createMcpSseServer(config: ServerConfig) {
             ...metrics.snapshot(sessionManager.size),
             instanceId: getInstanceId(),
             peers: listPeers(),
+            pluginRuntime: getPluginRuntimeMode(),
+            catalogEpoch: runtimeCatalog.getEpoch(),
           })
         );
         return;
@@ -137,6 +144,8 @@ export function createMcpSseServer(config: ServerConfig) {
             enabled: runtimeState.enabledPlugins,
             configs: runtimeState.pluginConfigs,
             builtins: listBuiltinPluginIds(),
+            mode: getPluginRuntimeMode(),
+            catalog: runtimeCatalog.list(),
           })
         );
         return;
@@ -161,7 +170,7 @@ export function createMcpSseServer(config: ServerConfig) {
             JSON.stringify({
               ok: true,
               enabled: runtimeState.enabledPlugins,
-              note: "New SSE sessions will use the updated plugin list",
+              note: "inprocess: new sessions; container: catalog is source of tools",
             })
           );
         } catch {
@@ -237,7 +246,6 @@ export function createMcpSseServer(config: ServerConfig) {
       metrics.recordHttp(path);
       const sessionId = randomUUID();
 
-      // Multi-instance: if CLUSTER_PEERS set and this node is not owner, advertise redirect
       if (listPeers().length > 0 && !shouldOwnSession(sessionId)) {
         const owner = affinityHeaders(sessionId)["X-Session-Owner"];
         logger.info("affinity redirect", { sessionId, owner });
@@ -251,7 +259,6 @@ export function createMcpSseServer(config: ServerConfig) {
             error: "session_affinity",
             owner,
             sessionId,
-            message: "Connect to the owning instance (sticky LB recommended)",
           })
         );
         return;
@@ -262,7 +269,7 @@ export function createMcpSseServer(config: ServerConfig) {
       sessionManager.add(session);
       logger.info("session created", {
         sessionId,
-        instanceId: getInstanceId(),
+        mode: getPluginRuntimeMode(),
         plugins: runtimeState.enabledPlugins,
       });
 
@@ -302,13 +309,9 @@ export function createMcpSseServer(config: ServerConfig) {
       const session = sessionManager.get(sessionId);
       if (!session || !session.isInitialized || !session.transport) {
         metrics.recordHttp(path, true);
-        // affinity hint when session lives elsewhere
         if (listPeers().length > 0) {
           const headers = affinityHeaders(sessionId);
-          res.writeHead(404, {
-            "Content-Type": "application/json",
-            ...headers,
-          });
+          res.writeHead(404, { "Content-Type": "application/json", ...headers });
           res.end(
             JSON.stringify({
               error: "Session not found or not ready",
@@ -346,6 +349,9 @@ export function createMcpSseServer(config: ServerConfig) {
           sessions: sessionManager.size,
           uptime: process.uptime(),
           plugins: runtimeState.enabledPlugins,
+          pluginRuntime: getPluginRuntimeMode(),
+          catalogEpoch: runtimeCatalog.getEpoch(),
+          catalogPlugins: runtimeCatalog.readyPlugins().map((p) => p.id),
           sandbox: process.env.SANDBOX_PLUGINS === "true",
           metrics: metrics.snapshot(sessionManager.size),
         })
@@ -362,9 +368,9 @@ export function createMcpSseServer(config: ServerConfig) {
     logger.info("core started", {
       port: config.port,
       instanceId: getInstanceId(),
+      pluginRuntime: getPluginRuntimeMode(),
       plugins: runtimeState.enabledPlugins,
       rateLimit: getPlatformConfig().rateLimitPerMin,
-      sandbox: process.env.SANDBOX_PLUGINS === "true",
     });
   });
 
