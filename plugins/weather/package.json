@@ -1,0 +1,7 @@
+{
+  "name": "@mcp-sse/plugin-weather",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.ts",
+  "private": true
+}
