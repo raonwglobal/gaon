@@ -1,10 +1,13 @@
 import type { McpPluginFactory } from "./interface.js";
-import { WeatherPlugin } from "../../../plugins/weather/index.js";
 
 /**
  * Built-in plugin factories.
- * External plugins can be registered at runtime via Control Plane in later phases.
+ * For the skeleton, weather is registered lazily to avoid hard path coupling.
+ * Drop real plugin modules under /plugins and wire them here or via Control Plane.
  */
 export const PLUGIN_FACTORIES: Record<string, McpPluginFactory> = {
-  weather: async () => new WeatherPlugin(),
+  weather: async () => {
+    const mod = await import("../../../../plugins/weather/index.js");
+    return new mod.WeatherPlugin();
+  },
 };
