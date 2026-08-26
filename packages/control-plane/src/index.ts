@@ -48,7 +48,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  // Manual sync trigger
   if (req.method === "POST" && pathname === "/api/sync") {
     if (!authorize(req)) {
       res.writeHead(401, { "Content-Type": "application/json" });
@@ -78,7 +77,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
 server.listen(PORT, async () => {
   console.log(`Control Plane listening on port ${PORT}`);
-  // Best-effort initial sync
   const result = await syncPluginsToCore();
   console.log(
     result.ok
