@@ -1,17 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ServerConfig } from "../config.js";
+import { getPlatformConfig } from "../runtime-state.js";
+import { metrics } from "../metrics.js";
 
 const hits = new Map<string, { count: number; resetAt: number }>();
 
-export function rateLimit(
-  req: IncomingMessage,
-  res: ServerResponse,
-  config: ServerConfig
-): boolean {
+export function rateLimit(req: IncomingMessage, res: ServerResponse): boolean {
   const ip = req.socket.remoteAddress || "unknown";
   const now = Date.now();
   const windowMs = 60 * 1000;
-  const limit = config.rateLimitPerMin;
+  const limit = getPlatformConfig().rateLimitPerMin;
 
   let entry = hits.get(ip);
   if (!entry || now > entry.resetAt) {
@@ -22,6 +19,7 @@ export function rateLimit(
   entry.count += 1;
 
   if (entry.count > limit) {
+    metrics.recordRateLimited();
     res.writeHead(429, {
       "Content-Type": "application/json",
       "Retry-After": String(Math.ceil((entry.resetAt - now) / 1000)),
@@ -31,4 +29,9 @@ export function rateLimit(
   }
 
   return true;
+}
+
+/** test helper */
+export function _resetRateLimitForTests(): void {
+  hits.clear();
 }

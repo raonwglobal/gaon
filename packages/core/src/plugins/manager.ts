@@ -5,12 +5,16 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { McpPlugin, PluginToolDefinition } from "./interface.js";
 import { PLUGIN_FACTORIES } from "./index.js";
+import { metrics } from "../metrics.js";
 
 export class PluginManager {
   private plugins: McpPlugin[] = [];
   private toolOwner = new Map<string, McpPlugin>();
 
-  async loadPlugins(names: string[], configs: Record<string, Record<string, unknown>> = {}): Promise<void> {
+  async loadPlugins(
+    names: string[],
+    configs: Record<string, Record<string, unknown>> = {}
+  ): Promise<void> {
     this.plugins = [];
     this.toolOwner.clear();
 
@@ -31,14 +35,12 @@ export class PluginManager {
   }
 
   async registerToolsToServer(server: Server): Promise<void> {
-    // Allow plugins that still use direct registerTools
     for (const plugin of this.plugins) {
       if (plugin.registerTools) {
         await plugin.registerTools(server);
       }
     }
 
-    // Aggregate listTools/callTool from plugins that implement the preferred API
     const aggregated: PluginToolDefinition[] = [];
     this.toolOwner.clear();
 
@@ -46,12 +48,10 @@ export class PluginManager {
       if (!plugin.listTools) continue;
       const tools = await plugin.listTools();
       for (const tool of tools) {
-        // Prefix with plugin id to avoid collisions
         const qualified = tool.name.startsWith(`${plugin.manifest.id}_`)
           ? tool.name
           : `${plugin.manifest.id}_${tool.name}`;
-        const def = { ...tool, name: qualified };
-        aggregated.push(def);
+        aggregated.push({ ...tool, name: qualified });
         this.toolOwner.set(qualified, plugin);
       }
     }
@@ -70,20 +70,23 @@ export class PluginManager {
       const owner = this.toolOwner.get(name);
 
       if (!owner?.callTool) {
+        metrics.recordToolCall(name, true);
         return {
           content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
           isError: true,
         };
       }
 
-      // Strip plugin prefix when calling plugin-local name if plugin expects short name
       const localName = name.startsWith(`${owner.manifest.id}_`)
         ? name.slice(owner.manifest.id.length + 1)
         : name;
 
       try {
-        return await owner.callTool({ name: localName, arguments: args });
+        const result = await owner.callTool({ name: localName, arguments: args });
+        metrics.recordToolCall(name, Boolean(result.isError));
+        return result;
       } catch (err) {
+        metrics.recordToolCall(name, true);
         return {
           content: [
             {
@@ -128,5 +131,10 @@ export class PluginManager {
 
   get loaded(): string[] {
     return this.plugins.map((p) => p.manifest.id);
+  }
+
+  /** Expose for tests */
+  getToolNames(): string[] {
+    return [...this.toolOwner.keys()];
   }
 }

@@ -1,16 +1,15 @@
 import type { IncomingMessage } from "node:http";
-import type { ServerConfig } from "../config.js";
+import { getPlatformConfig } from "../runtime-state.js";
 
-export function authenticate(req: IncomingMessage, config: ServerConfig): boolean {
-  if (!config.apiSecretToken) return true;
+export function authenticate(req: IncomingMessage): boolean {
+  const token = getPlatformConfig().apiSecretToken;
+  if (!token) return true;
 
-  const apiKey = req.headers["x-api-key"];
-  const authHeader = req.headers["authorization"];
-  const bearer =
-    typeof authHeader === "string"
-      ? authHeader.replace(/^Bearer\s+/i, "")
-      : undefined;
+  const header =
+    req.headers["x-api-key"] ||
+    (typeof req.headers["authorization"] === "string"
+      ? req.headers["authorization"].replace(/^Bearer\s+/i, "")
+      : undefined);
 
-  const token = (typeof apiKey === "string" ? apiKey : undefined) || bearer;
-  return token === config.apiSecretToken;
+  return header === token;
 }
