@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { store } from "../store.js";
+import { syncConfigToCore } from "../core-sync.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -26,8 +27,15 @@ export async function handleConfig(
     try {
       const body = JSON.parse(await readBody(req));
       const updated = store.setConfig(body);
+      // Single source: push to Core immediately
+      const sync = await syncConfigToCore();
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ config: updated }));
+      res.end(
+        JSON.stringify({
+          config: updated,
+          coreSync: sync,
+        })
+      );
     } catch {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Invalid body" }));

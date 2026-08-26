@@ -4,7 +4,7 @@ import { handlePlugins } from "./routes/plugins.js";
 import { handleSessions } from "./routes/sessions.js";
 import { handleConfig } from "./routes/config.js";
 import { handleMetrics } from "./routes/metrics.js";
-import { syncPluginsToCore } from "./core-sync.js";
+import { syncAllToCore } from "./core-sync.js";
 
 const PORT = Number(process.env.CONTROL_PORT ?? 3001);
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
@@ -54,9 +54,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       res.end(JSON.stringify({ error: "Unauthorized" }));
       return;
     }
-    const result = await syncPluginsToCore();
-    res.writeHead(result.ok ? 200 : 502, { "Content-Type": "application/json" });
-    res.end(JSON.stringify(result));
+    const result = await syncAllToCore();
+    const ok = result.plugins.ok && result.config.ok;
+    res.writeHead(ok ? 200 : 502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok, ...result }));
     return;
   }
 
@@ -77,12 +78,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
 server.listen(PORT, async () => {
   console.log(`Control Plane listening on port ${PORT}`);
-  const result = await syncPluginsToCore();
-  console.log(
-    result.ok
-      ? "Synced plugin list to Core"
-      : `Core sync skipped/failed: ${result.detail}`
-  );
+  const result = await syncAllToCore();
+  console.log("Initial sync:", JSON.stringify(result));
 });
 
 process.on("SIGTERM", () => {

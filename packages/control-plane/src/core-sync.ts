@@ -1,12 +1,16 @@
 import { registry } from "./registry.js";
+import { store } from "./store.js";
 
 const CORE_URL = process.env.CORE_URL || "http://localhost:3000";
 const INTERNAL_TOKEN =
   process.env.INTERNAL_TOKEN || process.env.ADMIN_TOKEN || "";
 
-/**
- * Push enabled plugin list + configs to Core so new SSE sessions pick them up.
- */
+function headers(): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (INTERNAL_TOKEN) h["X-Internal-Token"] = INTERNAL_TOKEN;
+  return h;
+}
+
 export async function syncPluginsToCore(): Promise<{ ok: boolean; detail?: string }> {
   const enabled = registry.enabledIds();
   const configs: Record<string, Record<string, unknown>> = {};
@@ -15,23 +19,44 @@ export async function syncPluginsToCore(): Promise<{ ok: boolean; detail?: strin
   }
 
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (INTERNAL_TOKEN) headers["X-Internal-Token"] = INTERNAL_TOKEN;
-
     const res = await fetch(`${CORE_URL}/internal/plugins`, {
       method: "PUT",
-      headers,
+      headers: headers(),
       body: JSON.stringify({ enabled, configs }),
     });
-
-    if (!res.ok) {
-      const text = await res.text();
-      return { ok: false, detail: text };
-    }
+    if (!res.ok) return { ok: false, detail: await res.text() };
     return { ok: true };
   } catch (err) {
     return { ok: false, detail: String(err) };
   }
+}
+
+/** Push platform config so Core CORS / rate-limit / maxSessions stay in sync. */
+export async function syncConfigToCore(): Promise<{ ok: boolean; detail?: string }> {
+  const config = store.getConfig();
+  try {
+    const res = await fetch(`${CORE_URL}/internal/config`, {
+      method: "PUT",
+      headers: headers(),
+      body: JSON.stringify({
+        allowedOrigins: config.allowedOrigins,
+        rateLimitPerMin: config.rateLimitPerMin,
+        maxSessions: config.maxSessions,
+        apiSecretToken: config.apiSecretToken,
+      }),
+    });
+    if (!res.ok) return { ok: false, detail: await res.text() };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, detail: String(err) };
+  }
+}
+
+export async function syncAllToCore(): Promise<{
+  plugins: { ok: boolean; detail?: string };
+  config: { ok: boolean; detail?: string };
+}> {
+  const plugins = await syncPluginsToCore();
+  const config = await syncConfigToCore();
+  return { plugins, config };
 }

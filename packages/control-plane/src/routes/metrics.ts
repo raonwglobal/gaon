@@ -2,38 +2,61 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { registry } from "../registry.js";
 
 const CORE_URL = process.env.CORE_URL || "http://localhost:3000";
+const INTERNAL_TOKEN =
+  process.env.INTERNAL_TOKEN || process.env.ADMIN_TOKEN || "";
+const startedAt = Date.now();
+
+function coreHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (INTERNAL_TOKEN) h["X-Internal-Token"] = INTERNAL_TOKEN;
+  return h;
+}
 
 export async function handleMetrics(
   req: IncomingMessage,
   res: ServerResponse,
   pathname: string
 ): Promise<boolean> {
-  if (req.method === "GET" && pathname === "/api/metrics") {
-    let coreHealth: Record<string, unknown> = {};
+  if (req.method === "GET" && (pathname === "/api/metrics" || pathname === "/api/health")) {
+    const plugins = registry.list();
+    let core: Record<string, unknown> | null = null;
+    let coreMetrics: Record<string, unknown> | null = null;
+
     try {
-      const r = await fetch(`${CORE_URL}/health`);
-      coreHealth = (await r.json()) as Record<string, unknown>;
+      const healthRes = await fetch(`${CORE_URL}/health`);
+      if (healthRes.ok) core = (await healthRes.json()) as Record<string, unknown>;
     } catch {
-      coreHealth = { status: "unreachable" };
+      core = null;
+    }
+
+    try {
+      const mRes = await fetch(`${CORE_URL}/internal/metrics`, {
+        headers: coreHeaders(),
+      });
+      if (mRes.ok) coreMetrics = (await mRes.json()) as Record<string, unknown>;
+    } catch {
+      coreMetrics = null;
     }
 
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
-        core: coreHealth,
+        uptime: Math.floor((Date.now() - startedAt) / 1000),
         plugins: {
-          total: registry.list().length,
-          enabled: registry.enabledIds().length,
+          total: plugins.length,
+          enabled: plugins.filter((p) => p.enabled).length,
         },
-        uptime: process.uptime(),
+        core: core
+          ? {
+              status: core.status,
+              sessions: core.sessions,
+              uptime: core.uptime,
+              plugins: core.plugins,
+            }
+          : { status: "unreachable" },
+        observability: coreMetrics,
       })
     );
-    return true;
-  }
-
-  if (req.method === "GET" && pathname === "/api/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", service: "control-plane" }));
     return true;
   }
 

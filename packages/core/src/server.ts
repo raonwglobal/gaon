@@ -8,8 +8,15 @@ import { applyCors } from "./security/cors.js";
 import { authenticate } from "./security/auth.js";
 import { rateLimit } from "./security/rate-limit.js";
 import type { ServerConfig } from "./config.js";
-import { runtimeState, setEnabledPlugins, setPluginConfig } from "./runtime-state.js";
+import {
+  runtimeState,
+  setEnabledPlugins,
+  setPluginConfig,
+  setPlatformConfig,
+  getPlatformConfig,
+} from "./runtime-state.js";
 import { listBuiltinPluginIds } from "./plugins/index.js";
+import { metrics } from "./metrics.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -30,8 +37,6 @@ function internalAuth(req: IncomingMessage, config: ServerConfig): boolean {
 }
 
 export function createMcpSseServer(config: ServerConfig) {
-  setEnabledPlugins(config.enabledPlugins);
-
   const sessionManager = new SessionManager({
     idleTimeoutMs: config.sessionIdleTimeoutMs,
     maxSessions: config.maxSessions,
@@ -39,45 +44,57 @@ export function createMcpSseServer(config: ServerConfig) {
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = parse(req.url || "", true);
+    const path = url.pathname || "/";
 
     if (req.method === "OPTIONS") {
-      applyCors(req, res, config);
+      applyCors(req, res);
       res.writeHead(204);
       res.end();
       return;
     }
 
-    applyCors(req, res, config);
+    applyCors(req, res);
 
-    if (url.pathname?.startsWith("/internal/")) {
+    if (path.startsWith("/internal/")) {
       if (!internalAuth(req, config)) {
+        metrics.recordHttp(path, true);
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Unauthorized" }));
         return;
       }
 
-      if (req.method === "GET" && url.pathname === "/internal/sessions") {
+      if (req.method === "GET" && path === "/internal/sessions") {
+        metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ sessions: sessionManager.list() }));
         return;
       }
 
-      const sessionMatch = url.pathname.match(/^\/internal\/sessions\/([^/]+)$/);
+      const sessionMatch = path.match(/^\/internal\/sessions\/([^/]+)$/);
       if (req.method === "DELETE" && sessionMatch) {
-        const sessionId = decodeURIComponent(sessionMatch[1]);
-        await sessionManager.remove(sessionId);
+        metrics.recordHttp(path);
+        await sessionManager.remove(decodeURIComponent(sessionMatch[1]));
         res.writeHead(204);
         res.end();
         return;
       }
 
-      if (req.method === "GET" && url.pathname === "/internal/builtins") {
+      if (req.method === "GET" && path === "/internal/builtins") {
+        metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ builtins: listBuiltinPluginIds() }));
         return;
       }
 
-      if (req.method === "GET" && url.pathname === "/internal/plugins") {
+      if (req.method === "GET" && path === "/internal/metrics") {
+        metrics.recordHttp(path);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(metrics.snapshot(sessionManager.size)));
+        return;
+      }
+
+      if (req.method === "GET" && path === "/internal/plugins") {
+        metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
@@ -89,15 +106,14 @@ export function createMcpSseServer(config: ServerConfig) {
         return;
       }
 
-      if (req.method === "PUT" && url.pathname === "/internal/plugins") {
+      if (req.method === "PUT" && path === "/internal/plugins") {
+        metrics.recordHttp(path);
         try {
           const body = JSON.parse(await readBody(req)) as {
             enabled?: string[];
             configs?: Record<string, Record<string, unknown>>;
           };
-          if (Array.isArray(body.enabled)) {
-            setEnabledPlugins(body.enabled);
-          }
+          if (Array.isArray(body.enabled)) setEnabledPlugins(body.enabled);
           if (body.configs) {
             for (const [id, cfg] of Object.entries(body.configs)) {
               setPluginConfig(id, cfg);
@@ -112,6 +128,48 @@ export function createMcpSseServer(config: ServerConfig) {
             })
           );
         } catch {
+          metrics.recordHttp(path, true);
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid body" }));
+        }
+        return;
+      }
+
+      // Platform config single-source sync from Control Plane
+      if (req.method === "GET" && path === "/internal/config") {
+        metrics.recordHttp(path);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ config: getPlatformConfig() }));
+        return;
+      }
+
+      if (req.method === "PUT" && path === "/internal/config") {
+        metrics.recordHttp(path);
+        try {
+          const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
+          const updated = setPlatformConfig({
+            allowedOrigins: Array.isArray(body.allowedOrigins)
+              ? (body.allowedOrigins as string[])
+              : undefined,
+            rateLimitPerMin:
+              typeof body.rateLimitPerMin === "number"
+                ? body.rateLimitPerMin
+                : undefined,
+            maxSessions:
+              typeof body.maxSessions === "number" ? body.maxSessions : undefined,
+            apiSecretToken:
+              typeof body.apiSecretToken === "string"
+                ? body.apiSecretToken
+                : undefined,
+            sessionIdleTimeoutMs:
+              typeof body.sessionIdleTimeoutMs === "number"
+                ? body.sessionIdleTimeoutMs
+                : undefined,
+          });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true, config: updated }));
+        } catch {
+          metrics.recordHttp(path, true);
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Invalid body" }));
         }
@@ -119,21 +177,27 @@ export function createMcpSseServer(config: ServerConfig) {
       }
     }
 
-    if (!rateLimit(req, res, config)) return;
+    if (!rateLimit(req, res)) {
+      metrics.recordHttp(path, true);
+      return;
+    }
 
-    if (config.apiSecretToken && !authenticate(req, config)) {
+    if (!authenticate(req)) {
+      metrics.recordHttp(path, true);
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Unauthorized" }));
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/sse") {
+    if (req.method === "GET" && path === "/sse") {
       if (!sessionManager.canAcceptNewSession()) {
+        metrics.recordHttp(path, true);
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Too many sessions" }));
         return;
       }
 
+      metrics.recordHttp(path);
       const sessionId = randomUUID();
       const transport = new SSEServerTransport("/message", res);
       const session = new McpSession(sessionId);
@@ -159,9 +223,10 @@ export function createMcpSseServer(config: ServerConfig) {
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/message") {
+    if (req.method === "POST" && path === "/message") {
       const sessionId = url.query.sessionId as string | undefined;
       if (!sessionId) {
+        metrics.recordHttp(path, true);
         res.writeHead(400, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "sessionId required" }));
         return;
@@ -169,11 +234,13 @@ export function createMcpSseServer(config: ServerConfig) {
 
       const session = sessionManager.get(sessionId);
       if (!session || !session.isInitialized || !session.transport) {
+        metrics.recordHttp(path, true);
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Session not found or not ready" }));
         return;
       }
 
+      metrics.recordHttp(path);
       try {
         await session.transport.handlePostMessage(req, res);
       } catch (error) {
@@ -186,7 +253,8 @@ export function createMcpSseServer(config: ServerConfig) {
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/health") {
+    if (req.method === "GET" && path === "/health") {
+      metrics.recordHttp(path);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -194,11 +262,13 @@ export function createMcpSseServer(config: ServerConfig) {
           sessions: sessionManager.size,
           uptime: process.uptime(),
           plugins: runtimeState.enabledPlugins,
+          metrics: metrics.snapshot(sessionManager.size),
         })
       );
       return;
     }
 
+    metrics.recordHttp(path, true);
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Not found" }));
   });
@@ -206,6 +276,7 @@ export function createMcpSseServer(config: ServerConfig) {
   server.listen(config.port, () => {
     console.log(`MCP SSE Server running on port ${config.port}`);
     console.log(`Enabled plugins: ${runtimeState.enabledPlugins.join(", ") || "(none)"}`);
+    console.log(`Rate limit: ${getPlatformConfig().rateLimitPerMin}/min`);
   });
 
   const shutdown = async () => {
