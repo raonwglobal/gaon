@@ -1,25 +1,27 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { PluginManager } from "./plugins/manager.js";
+import { RemotePluginManager } from "./runtime/remote-plugin-manager.js";
+import { getPluginRuntimeMode } from "./runtime/mode.js";
 
 export class McpSession {
   public readonly id: string;
   public readonly server: Server;
-  public readonly pluginManager: PluginManager;
   public readonly createdAt: number;
 
   private _transport: SSEServerTransport | null = null;
   private _isInitialized = false;
   private _isShuttingDown = false;
+  private inprocessManager: PluginManager | null = null;
+  private remoteManager: RemotePluginManager | null = null;
 
   constructor(sessionId: string) {
     this.id = sessionId;
     this.createdAt = Date.now();
     this.server = new Server(
-      { name: "mcp-sse-core", version: "0.2.1" },
+      { name: "mcp-sse-core", version: "0.5.0" },
       { capabilities: { tools: {} } }
     );
-    this.pluginManager = new PluginManager();
   }
 
   get transport(): SSEServerTransport | null {
@@ -40,8 +42,17 @@ export class McpSession {
     }
 
     this._transport = transport;
-    await this.pluginManager.loadPlugins(plugins, configs);
-    await this.pluginManager.registerToolsToServer(this.server);
+    const mode = getPluginRuntimeMode();
+
+    if (mode === "container") {
+      this.remoteManager = new RemotePluginManager();
+      await this.remoteManager.attachToServer(this.server);
+    } else {
+      this.inprocessManager = new PluginManager();
+      await this.inprocessManager.loadPlugins(plugins, configs);
+      await this.inprocessManager.registerToolsToServer(this.server);
+    }
+
     await this.server.connect(transport);
     this._isInitialized = true;
   }
@@ -51,7 +62,8 @@ export class McpSession {
     this._isShuttingDown = true;
 
     try {
-      await this.pluginManager.shutdownAll();
+      await this.inprocessManager?.shutdownAll();
+      await this.remoteManager?.shutdown();
     } finally {
       this._transport = null;
       this._isInitialized = false;
