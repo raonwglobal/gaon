@@ -49,6 +49,21 @@ export async function registerPlugin(body: {
   return r.json();
 }
 
+export async function installRemotePlugin(body: {
+  id: string;
+  name?: string;
+  source: { type: "git" | "npm"; ref: string; version?: string };
+  enabled?: boolean;
+}): Promise<unknown> {
+  const r = await fetch(`${BASE}/api/plugins/install`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
 export async function updatePluginConfig(
   id: string,
   config: Record<string, unknown>
@@ -130,6 +145,28 @@ export async function updateConfig(
     method: "PUT",
     headers: headers(),
     body: JSON.stringify(partial),
+  });
+  if (!r.ok) throw new Error(await parseError(r));
+  return r.json();
+}
+
+export interface LogEntry {
+  ts: number;
+  level: string;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+export async function fetchLogs(opts?: {
+  level?: string;
+  limit?: number;
+}): Promise<{ logs: LogEntry[]; instanceId?: string }> {
+  const qs = new URLSearchParams();
+  if (opts?.level) qs.set("level", opts.level);
+  if (opts?.limit) qs.set("limit", String(opts.limit));
+  const q = qs.toString();
+  const r = await fetch(`${BASE}/api/logs${q ? `?${q}` : ""}`, {
+    headers: headers(),
   });
   if (!r.ok) throw new Error(await parseError(r));
   return r.json();

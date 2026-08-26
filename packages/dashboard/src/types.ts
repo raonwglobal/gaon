@@ -5,7 +5,7 @@ export interface PluginRecord {
   description?: string;
   enabled: boolean;
   config: Record<string, unknown>;
-  source: { type: string; path?: string; [key: string]: unknown };
+  source: { type: string; path?: string; ref?: string; [key: string]: unknown };
   createdAt: number;
   updatedAt: number;
 }
@@ -35,6 +35,7 @@ export interface MetricsPayload {
     enabled?: number;
   };
   uptime?: number;
+  observability?: Record<string, unknown>;
 }
 
-export type Tab = "plugins" | "sessions" | "metrics" | "settings";
+export type Tab = "plugins" | "sessions" | "metrics" | "logs" | "settings";

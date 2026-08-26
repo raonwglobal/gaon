@@ -17,6 +17,13 @@ import {
 } from "./runtime-state.js";
 import { listBuiltinPluginIds } from "./plugins/index.js";
 import { metrics } from "./metrics.js";
+import { logger } from "./logger.js";
+import {
+  affinityHeaders,
+  getInstanceId,
+  listPeers,
+  shouldOwnSession,
+} from "./cluster/affinity.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -66,7 +73,12 @@ export function createMcpSseServer(config: ServerConfig) {
       if (req.method === "GET" && path === "/internal/sessions") {
         metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ sessions: sessionManager.list() }));
+        res.end(
+          JSON.stringify({
+            sessions: sessionManager.list(),
+            instanceId: getInstanceId(),
+          })
+        );
         return;
       }
 
@@ -74,6 +86,7 @@ export function createMcpSseServer(config: ServerConfig) {
       if (req.method === "DELETE" && sessionMatch) {
         metrics.recordHttp(path);
         await sessionManager.remove(decodeURIComponent(sessionMatch[1]));
+        logger.info("session terminated", { sessionId: sessionMatch[1] });
         res.writeHead(204);
         res.end();
         return;
@@ -89,7 +102,30 @@ export function createMcpSseServer(config: ServerConfig) {
       if (req.method === "GET" && path === "/internal/metrics") {
         metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(metrics.snapshot(sessionManager.size)));
+        res.end(
+          JSON.stringify({
+            ...metrics.snapshot(sessionManager.size),
+            instanceId: getInstanceId(),
+            peers: listPeers(),
+          })
+        );
+        return;
+      }
+
+      if (req.method === "GET" && path === "/internal/logs") {
+        metrics.recordHttp(path);
+        const level = url.query.level as string | undefined;
+        const limit = url.query.limit ? Number(url.query.limit) : 100;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            logs: logger.list({
+              level: level as "debug" | "info" | "warn" | "error" | undefined,
+              limit,
+            }),
+            instanceId: getInstanceId(),
+          })
+        );
         return;
       }
 
@@ -119,6 +155,7 @@ export function createMcpSseServer(config: ServerConfig) {
               setPluginConfig(id, cfg);
             }
           }
+          logger.info("plugins synced", { enabled: runtimeState.enabledPlugins });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -135,7 +172,6 @@ export function createMcpSseServer(config: ServerConfig) {
         return;
       }
 
-      // Platform config single-source sync from Control Plane
       if (req.method === "GET" && path === "/internal/config") {
         metrics.recordHttp(path);
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -166,6 +202,7 @@ export function createMcpSseServer(config: ServerConfig) {
                 ? body.sessionIdleTimeoutMs
                 : undefined,
           });
+          logger.info("platform config updated", { config: updated });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true, config: updated }));
         } catch {
@@ -199,9 +236,35 @@ export function createMcpSseServer(config: ServerConfig) {
 
       metrics.recordHttp(path);
       const sessionId = randomUUID();
+
+      // Multi-instance: if CLUSTER_PEERS set and this node is not owner, advertise redirect
+      if (listPeers().length > 0 && !shouldOwnSession(sessionId)) {
+        const owner = affinityHeaders(sessionId)["X-Session-Owner"];
+        logger.info("affinity redirect", { sessionId, owner });
+        res.writeHead(307, {
+          "Content-Type": "application/json",
+          Location: `http://${owner}/sse`,
+          ...affinityHeaders(sessionId),
+        });
+        res.end(
+          JSON.stringify({
+            error: "session_affinity",
+            owner,
+            sessionId,
+            message: "Connect to the owning instance (sticky LB recommended)",
+          })
+        );
+        return;
+      }
+
       const transport = new SSEServerTransport("/message", res);
       const session = new McpSession(sessionId);
       sessionManager.add(session);
+      logger.info("session created", {
+        sessionId,
+        instanceId: getInstanceId(),
+        plugins: runtimeState.enabledPlugins,
+      });
 
       try {
         await session.initialize(
@@ -210,10 +273,14 @@ export function createMcpSseServer(config: ServerConfig) {
           runtimeState.pluginConfigs
         );
         res.on("close", () => {
+          logger.info("session closed", { sessionId });
           void sessionManager.remove(sessionId);
         });
       } catch (error) {
-        console.error("Session init failed:", error);
+        logger.error("session init failed", {
+          sessionId,
+          error: String(error),
+        });
         await sessionManager.remove(sessionId);
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
@@ -235,6 +302,21 @@ export function createMcpSseServer(config: ServerConfig) {
       const session = sessionManager.get(sessionId);
       if (!session || !session.isInitialized || !session.transport) {
         metrics.recordHttp(path, true);
+        // affinity hint when session lives elsewhere
+        if (listPeers().length > 0) {
+          const headers = affinityHeaders(sessionId);
+          res.writeHead(404, {
+            "Content-Type": "application/json",
+            ...headers,
+          });
+          res.end(
+            JSON.stringify({
+              error: "Session not found or not ready",
+              owner: headers["X-Session-Owner"],
+            })
+          );
+          return;
+        }
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Session not found or not ready" }));
         return;
@@ -244,7 +326,7 @@ export function createMcpSseServer(config: ServerConfig) {
       try {
         await session.transport.handlePostMessage(req, res);
       } catch (error) {
-        console.error("handlePostMessage error:", error);
+        logger.error("handlePostMessage error", { error: String(error) });
         if (!res.headersSent) {
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Internal error" }));
@@ -259,9 +341,12 @@ export function createMcpSseServer(config: ServerConfig) {
       res.end(
         JSON.stringify({
           status: "ok",
+          instanceId: getInstanceId(),
+          peers: listPeers(),
           sessions: sessionManager.size,
           uptime: process.uptime(),
           plugins: runtimeState.enabledPlugins,
+          sandbox: process.env.SANDBOX_PLUGINS === "true",
           metrics: metrics.snapshot(sessionManager.size),
         })
       );
@@ -274,13 +359,17 @@ export function createMcpSseServer(config: ServerConfig) {
   });
 
   server.listen(config.port, () => {
-    console.log(`MCP SSE Server running on port ${config.port}`);
-    console.log(`Enabled plugins: ${runtimeState.enabledPlugins.join(", ") || "(none)"}`);
-    console.log(`Rate limit: ${getPlatformConfig().rateLimitPerMin}/min`);
+    logger.info("core started", {
+      port: config.port,
+      instanceId: getInstanceId(),
+      plugins: runtimeState.enabledPlugins,
+      rateLimit: getPlatformConfig().rateLimitPerMin,
+      sandbox: process.env.SANDBOX_PLUGINS === "true",
+    });
   });
 
   const shutdown = async () => {
-    console.log("Shutting down core...");
+    logger.info("shutting down core");
     await sessionManager.shutdownAll();
     server.close();
     process.exit(0);
