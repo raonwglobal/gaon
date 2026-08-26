@@ -54,11 +54,7 @@ export function App() {
   });
 
   const [editPluginId, setEditPluginId] = useState<string | null>(null);
-  const [editConfigJson, setEditConfigJson] = useState("{}").
-  // fix syntax - useState properly
-  ;
-
-  // Re-declare cleanly below was broken - fix in actual content
+  const [editConfigJson, setEditConfigJson] = useState("{}");
 
   const [platformForm, setPlatformForm] = useState({
     allowedOrigins: "*",
@@ -104,7 +100,6 @@ export function App() {
     void reload();
   }, [reload]);
 
-  // Auto-refresh sessions & metrics every 10s
   useEffect(() => {
     if (tab !== "sessions" && tab !== "metrics") return;
     const t = setInterval(() => void reload(), 10_000);
@@ -126,7 +121,7 @@ export function App() {
 
     if (!builtins.includes(id)) {
       const ok = window.confirm(
-        `\u26a0\ufe0f "${id}" is not in Core PLUGIN_FACTORIES (known: ${builtins.join(
+        `"${id}" is not in Core PLUGIN_FACTORIES (known: ${builtins.join(
           ", "
         )}).\n\nMetadata can still be registered, but tools will not load until you add a factory in packages/core/src/plugins/index.ts.\n\nContinue?`
       );
@@ -266,8 +261,14 @@ export function App() {
                 onChange={(e) => setEditConfigJson(e.target.value)}
               />
               <div className="row-actions">
-                <button onClick={() => void savePluginConfig()}>Save config</button>
-                <button className="ghost" onClick={() => setEditPluginId(null)}>
+                <button type="button" onClick={() => void savePluginConfig()}>
+                  Save config
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => setEditPluginId(null)}
+                >
                   Cancel
                 </button>
               </div>
@@ -278,6 +279,7 @@ export function App() {
             <div className="card-header">
               <h2>Plugins</h2>
               <button
+                type="button"
                 onClick={() =>
                   syncToCore()
                     .then((r) =>
@@ -323,9 +325,12 @@ export function App() {
                       </span>
                     </td>
                     <td className="actions">
-                      <button onClick={() => openConfigEditor(p)}>Config</button>
+                      <button type="button" onClick={() => openConfigEditor(p)}>
+                        Config
+                      </button>
                       {p.enabled ? (
                         <button
+                          type="button"
                           onClick={() =>
                             disablePlugin(p.id)
                               .then(reload)
@@ -336,6 +341,7 @@ export function App() {
                         </button>
                       ) : (
                         <button
+                          type="button"
                           onClick={() =>
                             enablePlugin(p.id)
                               .then(reload)
@@ -346,6 +352,7 @@ export function App() {
                         </button>
                       )}
                       <button
+                        type="button"
                         onClick={() => {
                           if (!window.confirm(`Delete plugin "${p.id}"?`)) return;
                           deletePlugin(p.id)
@@ -371,7 +378,9 @@ export function App() {
         <div className="card">
           <div className="card-header">
             <h2>Active Sessions</h2>
-            <button onClick={() => void reload()}>Refresh</button>
+            <button type="button" onClick={() => void reload()}>
+              Refresh
+            </button>
           </div>
           <p className="muted">Auto-refreshes every 10s</p>
           <table>
@@ -391,6 +400,7 @@ export function App() {
                   <td>{new Date(s.lastActivity).toLocaleString()}</td>
                   <td className="actions">
                     <button
+                      type="button"
                       onClick={() => {
                         if (!window.confirm("Terminate this session?")) return;
                         terminateSession(s.id)
@@ -454,7 +464,9 @@ export function App() {
           <div className="card">
             <div className="card-header">
               <h2>Raw metrics</h2>
-              <button onClick={() => void reload()}>Refresh</button>
+              <button type="button" onClick={() => void reload()}>
+                Refresh
+              </button>
             </div>
             <pre className="code-block">
               {JSON.stringify(metrics, null, 2)}
@@ -475,7 +487,9 @@ export function App() {
               placeholder="Admin token"
             />
             <div className="row-actions">
-              <button onClick={saveToken}>Save token</button>
+              <button type="button" onClick={saveToken}>
+                Save token
+              </button>
             </div>
           </div>
 
@@ -530,7 +544,7 @@ export function App() {
                       apiSecretToken: e.target.value,
                     })
                   }
-                  placeholder="Leave empty to keep unchanged behavior"
+                  placeholder="Leave empty to keep unchanged"
                 />
               </label>
               <div className="row-actions">
