@@ -1,6 +1,6 @@
 {
   "name": "mcp-sse-platform",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Universal MCP SSE server with plugin system and admin dashboard",
   "workspaces": [
@@ -13,8 +13,9 @@
     "dev:dashboard": "npm run dev -w @mcp-sse/dashboard",
     "start:core": "npm run start -w @mcp-sse/core",
     "start:control": "npm run start -w @mcp-sse/control-plane",
-    "lint": "echo \"lint placeholder\"",
-    "test": "echo \"test placeholder\""
+    "test": "npm run test -w @mcp-sse/core",
+    "test:core": "npm run test -w @mcp-sse/core",
+    "lint": "echo \"lint placeholder\""
   },
   "engines": {
     "node": ">=20"

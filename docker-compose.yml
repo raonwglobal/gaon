@@ -7,10 +7,15 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - ENABLED_PLUGINS=weather
+      - ENABLED_PLUGINS=weather,echo
       - ALLOWED_ORIGINS=*
       - RATE_LIMIT_PER_MIN=120
       - MAX_SESSIONS=500
+      - PLUGINS_DIR=/app/plugins
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
+    volumes:
+      - ./plugins:/app/plugins:ro
     restart: unless-stopped
 
   control-plane:
@@ -22,7 +27,11 @@ services:
     environment:
       - CONTROL_PORT=3001
       - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
       - CORE_URL=http://core:3000
+      - DATABASE_PATH=/data/platform.json
+    volumes:
+      - control-data:/data
     depends_on:
       - core
     restart: unless-stopped
@@ -36,3 +45,6 @@ services:
     depends_on:
       - control-plane
     restart: unless-stopped
+
+volumes:
+  control-data:

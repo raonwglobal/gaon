@@ -3,5 +3,6 @@
   "version": "1.0.0",
   "type": "module",
   "main": "index.ts",
+  "mcpPluginId": "echo",
   "private": true
 }

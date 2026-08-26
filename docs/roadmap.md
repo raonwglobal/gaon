@@ -1,67 +1,42 @@
 # MCP SSE 플랫폼 로드맵
 
-## Phase 1 — 코어 안정화
+## Phase 1 — 코어 안정화 ✅
 
-**상태**: 완료 (스켈레톤 + SDK 연동)
+- [x] PRD / session / PluginManager / SDK handlers
+- [x] security, health, Docker
 
-- [x] PRD 오류 수정
-- [x] session / session-manager / server / security
-- [x] PluginManager + `ListToolsRequestSchema` / `CallToolRequestSchema` 집계
-- [x] Weather / Echo 플러그인 실구현
-- [x] `/health`, `/internal/*`
-- [x] Docker 정의
+## Phase 2 — Control Plane ✅
 
----
+- [x] Registry + JSON 영속화
+- [x] Core 플러그인 동기화
+- [x] **Platform config 단일 소스** (`PUT /internal/config`)
 
-## Phase 2 — Control Plane
+## Phase 3 — Dashboard MVP+ ✅
 
-**상태**: 완료
+- [x] 플러그인 CRUD / config / sync
+- [x] Metrics 카드 / 세션 종료 / auto-refresh
 
-- [x] Plugin Registry + JSON 파일 영속화 (`data/platform.json`)
-- [x] CRUD / enable / disable API
-- [x] Core 동기화 (`PUT /internal/plugins`, `POST /api/sync`)
-- [x] sessions / config / metrics
+## Phase 4 — 운영 ✅
 
----
-
-## Phase 3 — Dashboard MVP
-
-**상태**: 완료
-
-- [x] React + Vite UI
-- [x] 플러그인 목록 / enable·disable / delete
-- [x] 플러그인 등록 폼
-- [x] Sync to Core 버튼
-- [x] 세션·메트릭·설정
-
----
-
-## Phase 4 — 운영 기능
-
-**상태**: 부분 완료
-
-- [x] 메트릭 API
+- [x] 관측성 (`metrics` + `/internal/metrics` + tools 호출수)
 - [x] 플러그인 설정 영속화
-- [ ] 구조화 로그 수집 UI
-- [ ] 플러그인 버전 롤백 UI
+- [ ] 구조화 로그 UI (다음)
 
----
+## Phase 5 — 확장 ✅ (기반)
 
-## Phase 5 — 고급
-
-**상태**: 템플릿 완료 / 런타임 남음
-
-- [x] `plugins/_template` 플러그인 템플릿
+- [x] `plugins/_template`
+- [x] **플러그인 자동 발견** (`PLUGINS_DIR` 스캔)
+- [x] **단위 테스트** (vitest: metrics, rate-limit, runtime-state, manager, discover)
+- [x] **Docker 플러그인 경로** (`PLUGINS_DIR=/app/plugins`)
 - [ ] npm/Git 원격 로딩
-- [ ] 샌드박스 실행
+- [ ] 프로세스 샌드박스
 - [ ] 다중 인스턴스 + 세션 애피니티
 
----
+## 검증
 
-## 플러그인 추가 절차
-
-1. `cp -r plugins/_template plugins/my-plugin`
-2. `manifest.id` / tools 구현
-3. `packages/core/src/plugins/index.ts` 팩토리 등록
-4. Dashboard에서 Register + Enable
-5. 새 SSE 세션 연결 후 `tools/list` 확인
+```bash
+npm install
+npm test
+npm run dev:core
+# Dashboard Settings → platform config 저장 → Core rate limit 반영 확인
+```
