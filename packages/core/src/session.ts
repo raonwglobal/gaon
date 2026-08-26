@@ -16,7 +16,7 @@ export class McpSession {
     this.id = sessionId;
     this.createdAt = Date.now();
     this.server = new Server(
-      { name: "mcp-sse-core", version: "0.2.0" },
+      { name: "mcp-sse-core", version: "0.2.1" },
       { capabilities: { tools: {} } }
     );
     this.pluginManager = new PluginManager();
@@ -30,13 +30,17 @@ export class McpSession {
     return this._isInitialized;
   }
 
-  async initialize(transport: SSEServerTransport, plugins: string[]): Promise<void> {
+  async initialize(
+    transport: SSEServerTransport,
+    plugins: string[],
+    configs: Record<string, Record<string, unknown>> = {}
+  ): Promise<void> {
     if (this._isInitialized) {
       throw new Error(`Session ${this.id} is already initialized`);
     }
 
     this._transport = transport;
-    await this.pluginManager.loadPlugins(plugins);
+    await this.pluginManager.loadPlugins(plugins, configs);
     await this.pluginManager.registerToolsToServer(this.server);
     await this.server.connect(transport);
     this._isInitialized = true;

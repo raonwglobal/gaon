@@ -1,48 +1,77 @@
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type { McpPlugin, McpPluginManifest } from "../../packages/core/src/plugins/interface.js";
+import type {
+  McpPlugin,
+  McpPluginManifest,
+  PluginToolDefinition,
+  ToolCallContext,
+  ToolCallResult,
+} from "../../packages/core/src/plugins/interface.js";
 
 /**
- * Example Weather plugin.
- * Demonstrates the McpPlugin contract used by the core runtime.
+ * Example Weather plugin using the aggregated listTools/callTool API.
  */
 export class WeatherPlugin implements McpPlugin {
   readonly manifest: McpPluginManifest = {
     id: "weather",
     name: "Weather Plugin",
-    version: "1.0.0",
+    version: "1.0.1",
     description: "Simple weather lookup example plugin",
     author: "mcp-sse-platform",
   };
 
-  async initialize(_config: Record<string, unknown>): Promise<void> {
-    // Load API keys or external clients here when needed.
+  private defaultCity = "Seoul";
+
+  async initialize(config: Record<string, unknown>): Promise<void> {
+    if (typeof config.defaultCity === "string") {
+      this.defaultCity = config.defaultCity;
+    }
   }
 
-  async registerTools(server: Server): Promise<void> {
-    // Minimal example tool registration.
-    // Real implementations should use the SDK's tool registration APIs.
-    server.setRequestHandler?.({"method": "tools/list"} as never, async () => {
-      return {
-        tools: [
-          {
-            name: "weather_get_current",
-            description: "Get current weather for a city (example)",
-            inputSchema: {
-              type: "object",
-              properties: {
-                city: { type: "string", description: "City name" },
-              },
-              required: ["city"],
+  async listTools(): Promise<PluginToolDefinition[]> {
+    return [
+      {
+        name: "get_current",
+        description: "Get current weather for a city (demo — returns mock data)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            city: {
+              type: "string",
+              description: "City name (default from plugin config)",
             },
           },
-        ],
-      };
-    });
+        },
+      },
+    ];
   }
 
-  async shutdown(): Promise<void> {
-    // Cleanup resources
+  async callTool(ctx: ToolCallContext): Promise<ToolCallResult> {
+    if (ctx.name !== "get_current") {
+      return {
+        content: [{ type: "text", text: `Unknown tool: ${ctx.name}` }],
+        isError: true,
+      };
+    }
+
+    const city =
+      typeof ctx.arguments.city === "string" && ctx.arguments.city.trim()
+        ? ctx.arguments.city.trim()
+        : this.defaultCity;
+
+    // Demo payload — replace with a real weather API in production
+    const payload = {
+      city,
+      tempC: 22,
+      condition: "Partly cloudy",
+      source: "mock",
+      ts: new Date().toISOString(),
+    };
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    };
   }
+
+  async shutdown(): Promise<void> {}
 
   async healthCheck() {
     return { status: "ok" as const, message: "weather plugin ready" };
