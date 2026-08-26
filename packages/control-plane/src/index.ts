@@ -4,14 +4,21 @@ import { handlePlugins } from "./routes/plugins.js";
 import { handleSessions } from "./routes/sessions.js";
 import { handleConfig } from "./routes/config.js";
 import { handleMetrics } from "./routes/metrics.js";
+import { syncPluginsToCore } from "./core-sync.js";
 
 const PORT = Number(process.env.CONTROL_PORT ?? 3001);
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 
 function applyCors(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Admin-Token"
+  );
 }
 
 function authorize(req: IncomingMessage): boolean {
@@ -36,9 +43,21 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
-  // Health is public
   if (pathname === "/api/health" || pathname === "/health") {
     await handleMetrics(req, res, "/api/health");
+    return;
+  }
+
+  // Manual sync trigger
+  if (req.method === "POST" && pathname === "/api/sync") {
+    if (!authorize(req)) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+    const result = await syncPluginsToCore();
+    res.writeHead(result.ok ? 200 : 502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(result));
     return;
   }
 
@@ -57,8 +76,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   res.end(JSON.stringify({ error: "Not found" }));
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Control Plane listening on port ${PORT}`);
+  // Best-effort initial sync
+  const result = await syncPluginsToCore();
+  console.log(
+    result.ok
+      ? "Synced plugin list to Core"
+      : `Core sync skipped/failed: ${result.detail}`
+  );
 });
 
 process.on("SIGTERM", () => {

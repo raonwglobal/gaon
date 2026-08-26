@@ -2,87 +2,66 @@
 
 ## Phase 1 — 코어 안정화
 
-**상태**: 스켈레톤 완료
+**상태**: 완료 (스켈레톤 + SDK 연동)
 
-- [x] PRD 오류 수정 (타입, transport 접근, 세션 타임아웃, 보안 인터페이스)
-- [x] `packages/core` 스켈레톤
-  - [x] session.ts / session-manager.ts
-  - [x] server.ts (라우팅, CORS, Auth, Rate Limit)
-  - [x] plugins/interface.ts + manager.ts
-  - [x] config.ts + index.ts
-- [x] `/health`, `/internal/sessions` 엔드포인트
-- [x] Docker 빌드 정의
-- [ ] 실제 MCP SDK 도구 등록 API와의 정합 테스트 (런타임 검증 필요)
-- [ ] 단위 테스트
-
-**성공 기준**: `GET /sse` 후 세션 생성, 유휴 세션 자동 정리, API Key로 미인증 요청 차단.
+- [x] PRD 오류 수정
+- [x] session / session-manager / server / security
+- [x] PluginManager + `ListToolsRequestSchema` / `CallToolRequestSchema` 집계
+- [x] Weather / Echo 플러그인 실구현
+- [x] `/health`, `/internal/*`
+- [x] Docker 정의
 
 ---
 
-## Phase 2 — Control Plane 기초
+## Phase 2 — Control Plane
 
-**상태**: 스켈레톤 완료
+**상태**: 완료
 
-- [x] Plugin Registry (인메모리 저장소)
-- [x] `POST/GET/PATCH/DELETE /api/plugins`
-- [x] enable / disable
-- [x] `/api/config`, `/api/sessions`, `/api/metrics`, `/api/health`
-- [ ] SQLite/PostgreSQL 영속화
-- [ ] Core와의 플러그인 목록 동기화 (hot reload)
+- [x] Plugin Registry + JSON 파일 영속화 (`data/platform.json`)
+- [x] CRUD / enable / disable API
+- [x] Core 동기화 (`PUT /internal/plugins`, `POST /api/sync`)
+- [x] sessions / config / metrics
 
 ---
 
 ## Phase 3 — Dashboard MVP
 
-**상태**: 스켈레톤 완료
+**상태**: 완료
 
-- [x] React + Vite 대시보드
-- [x] 플러그인 목록 / enable·disable
-- [x] 세션 모니터링
-- [x] 메트릭 조회
-- [x] Admin Token 설정
-- [ ] 플러그인 등록 폼 (UI)
-- [ ] JSON Schema 기반 설정 폼
+- [x] React + Vite UI
+- [x] 플러그인 목록 / enable·disable / delete
+- [x] 플러그인 등록 폼
+- [x] Sync to Core 버튼
+- [x] 세션·메트릭·설정
 
 ---
 
 ## Phase 4 — 운영 기능
 
-**상태**: 구조 완료 / 상세 구현 남음
+**상태**: 부분 완료
 
-- [x] 메트릭 API 초안
-- [ ] 로그 수집 및 UI
-- [ ] 플러그인 헬스체크 주기
-- [ ] 버전 관리 / 롤백
-- [ ] Rate Limit·CORS 대시보드 편집
+- [x] 메트릭 API
+- [x] 플러그인 설정 영속화
+- [ ] 구조화 로그 수집 UI
+- [ ] 플러그인 버전 롤백 UI
 
 ---
 
-## Phase 5 — 고급 기능
+## Phase 5 — 고급
 
-**상태**: 설계 완료 / 구현 남음
+**상태**: 템플릿 완료 / 런타임 남음
 
-- [ ] 원격 플러그인 (npm / Git)
-- [ ] 플러그인 샌드박스
-- [ ] 공개 마켓플레이스
+- [x] `plugins/_template` 플러그인 템플릿
+- [ ] npm/Git 원격 로딩
+- [ ] 샌드박스 실행
 - [ ] 다중 인스턴스 + 세션 애피니티
-- [ ] SSO / 고급 RBAC
 
 ---
 
-## 현재 진행 상태
+## 플러그인 추가 절차
 
-| Phase | 상태 | 비고 |
-|-------|------|------|
-| Phase 1 | 스켈레톤 완료 | 런타임 검증·SDK 정합 필요 |
-| Phase 2 | 스켈레톤 완료 | 인메모리 레지스트 |
-| Phase 3 | 스켈레톤 완료 | MVP UI |
-| Phase 4 | 부분 완료 | 메트릭 API만 |
-| Phase 5 | 설계만 | 미구현 |
-
-### 다음 우선순위 작업
-
-1. `npm install` 후 core / control-plane 로컬 기동 검증
-2. `@modelcontextprotocol/sdk` 실제 tool registration API에 맞추어 Weather 플러그인 완성
-3. Control Plane ↔ Core 플러그인 enable 목록 동기화
-4. Dashboard 플러그인 등록 폼 추가
+1. `cp -r plugins/_template plugins/my-plugin`
+2. `manifest.id` / tools 구현
+3. `packages/core/src/plugins/index.ts` 팩토리 등록
+4. Dashboard에서 Register + Enable
+5. 새 SSE 세션 연결 후 `tools/list` 확인

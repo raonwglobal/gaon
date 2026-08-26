@@ -1,4 +1,5 @@
 import { store, type PluginRecord } from "./store.js";
+import { syncPluginsToCore } from "./core-sync.js";
 
 export class PluginRegistry {
   list(): PluginRecord[] {
@@ -16,6 +17,7 @@ export class PluginRegistry {
     description?: string;
     source: PluginRecord["source"];
     config?: Record<string, unknown>;
+    enabled?: boolean;
   }): PluginRecord {
     const now = Date.now();
     const existing = store.getPlugin(input.id);
@@ -24,13 +26,14 @@ export class PluginRegistry {
       name: input.name,
       version: input.version,
       description: input.description,
-      enabled: existing?.enabled ?? true,
+      enabled: input.enabled ?? existing?.enabled ?? true,
       config: input.config ?? existing?.config ?? {},
       source: input.source,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
     store.upsertPlugin(record);
+    void syncPluginsToCore();
     return record;
   }
 
@@ -40,6 +43,7 @@ export class PluginRegistry {
     p.enabled = true;
     p.updatedAt = Date.now();
     store.upsertPlugin(p);
+    void syncPluginsToCore();
     return p;
   }
 
@@ -49,6 +53,7 @@ export class PluginRegistry {
     p.enabled = false;
     p.updatedAt = Date.now();
     store.upsertPlugin(p);
+    void syncPluginsToCore();
     return p;
   }
 
@@ -58,11 +63,14 @@ export class PluginRegistry {
     p.config = { ...p.config, ...config };
     p.updatedAt = Date.now();
     store.upsertPlugin(p);
+    void syncPluginsToCore();
     return p;
   }
 
   uninstall(id: string): boolean {
-    return store.deletePlugin(id);
+    const ok = store.deletePlugin(id);
+    if (ok) void syncPluginsToCore();
+    return ok;
   }
 
   enabledIds(): string[] {
