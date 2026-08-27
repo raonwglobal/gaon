@@ -1,0 +1,48 @@
+# Example: echo plugin runtime Deployment + Service
+# kubectl apply -f deploy/k8s/namespace.yaml
+# kubectl apply -f deploy/k8s/plugin-echo.example.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: plugin-echo
+  namespace: mcp-plugins
+  labels:
+    app: mcp-plugin
+    plugin-id: echo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      plugin-id: echo
+  template:
+    metadata:
+      labels:
+        app: mcp-plugin
+        plugin-id: echo
+    spec:
+      containers:
+        - name: runtime
+          image: ghcr.io/example/mcp-plugin-runtime:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: PLUGIN_ID
+              value: echo
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: plugin-echo
+  namespace: mcp-plugins
+spec:
+  selector:
+    plugin-id: echo
+  ports:
+    - port: 8080
+      targetPort: 8080
