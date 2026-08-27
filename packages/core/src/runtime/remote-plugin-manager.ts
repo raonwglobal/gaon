@@ -12,14 +12,9 @@ import {
 import { HttpPluginTransport } from "./http-transport.js";
 import { metrics } from "../metrics.js";
 import { logger } from "../logger.js";
-import type { RuntimeToolDefinition } from "./types.js";
+import type { RuntimeCallResult, RuntimeToolDefinition } from "./types.js";
 import { sessionHub } from "./session-hub.js";
 
-/**
- * Catalog-backed plugin manager for container (or any HTTP) runtimes.
- * tools/list and tools/call always read the current catalog — hot-reload safe.
- * On catalog change: clear cache + notify clients (tools/list_changed).
- */
 export class RemotePluginManager {
   private unsub: (() => void) | null = null;
   private server: Server | null = null;
@@ -97,26 +92,20 @@ export class RemotePluginManager {
         }
       }
 
+      const fail = (text: string): RuntimeCallResult => ({
+        content: [{ type: "text", text }],
+        isError: true,
+      });
+
       if (!pluginId) {
         metrics.recordToolCall(qualified, true);
-        return {
-          content: [{ type: "text" as const, text: `Unknown tool: ${qualified}` }],
-          isError: true,
-        };
+        return fail(`Unknown tool: ${qualified}`) as RuntimeCallResult;
       }
 
       const rt = runtimeCatalog.get(pluginId);
       if (!rt || rt.status !== "ready") {
         metrics.recordToolCall(qualified, true);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Plugin ${pluginId} is not ready`,
-            },
-          ],
-          isError: true,
-        };
+        return fail(`Plugin ${pluginId} is not ready`) as RuntimeCallResult;
       }
 
       try {
@@ -126,18 +115,10 @@ export class RemotePluginManager {
           arguments: args,
         });
         metrics.recordToolCall(qualified, Boolean(result.isError));
-        return result;
+        return result as RuntimeCallResult;
       } catch (err) {
         metrics.recordToolCall(qualified, true);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: err instanceof Error ? err.message : String(err),
-            },
-          ],
-          isError: true,
-        };
+        return fail(err instanceof Error ? err.message : String(err)) as RuntimeCallResult;
       }
     });
 
