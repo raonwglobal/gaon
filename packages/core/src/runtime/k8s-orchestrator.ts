@@ -1,30 +1,19 @@
 /**
  * Kubernetes-oriented orchestrator.
- *
- * Modes:
- * 1) endpoint/service DNS only — register `http://plugin-<id>.<ns>.svc:8080`
- * 2) kubectl apply — when K8s_APPLY=true and kubectl available
  */
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import type { PluginOrchestrator, DeployRequest } from "./orchestrator.js";
 import type { PluginRuntimeRecord } from "./types.js";
 import { runtimeCatalog } from "./catalog.js";
 import { HttpPluginTransport } from "./http-transport.js";
 import { logger } from "../logger.js";
 
-const execFileAsync = promisify(execFile);
-
 const NS = process.env.K8S_NAMESPACE || "mcp-plugins";
 const APPLY = process.env.K8S_APPLY === "true" || process.env.K8S_APPLY === "1";
 const CLUSTER_DOMAIN = process.env.K8S_CLUSTER_DOMAIN || "svc.cluster.local";
 
-function serviceHost(id: string): string {
-  return `plugin-${id}.${NS}.${CLUSTER_DOMAIN}`;
-}
-
 function serviceEndpoint(id: string): string {
-  return `http://${serviceHost(id)}:8080`;
+  return `http://plugin-${id}.${NS}.${CLUSTER_DOMAIN}:8080`;
 }
 
 function deploymentYaml(id: string, image: string): string {
@@ -83,13 +72,29 @@ spec:
 `;
 }
 
-async function kubectl(args: string[], input?: string): Promise<string> {
-  const { stdout, stderr } = await execFileAsync("kubectl", args, {
-    timeout: 120_000,
-    maxBuffer: 5 * 1024 * 1024,
-    input,
+function runKubectl(args: string[], stdin?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("kubectl", args, {
+      stdio: [stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (d) => {
+      stdout += String(d);
+    });
+    child.stderr?.on("data", (d) => {
+      stderr += String(d);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve((stdout || stderr).trim());
+      else reject(new Error(stderr || stdout || `kubectl exit ${code}`));
+    });
+    if (stdin != null && child.stdin) {
+      child.stdin.write(stdin);
+      child.stdin.end();
+    }
   });
-  return (stdout || stderr || "").toString().trim();
 }
 
 export class K8sOrchestrator implements PluginOrchestrator {
@@ -98,9 +103,11 @@ export class K8sOrchestrator implements PluginOrchestrator {
 
     if (!endpoint && req.image && APPLY) {
       try {
-        await kubectl(["create", "namespace", NS, "--dry-run=client", "-o", "yaml"]);
-        await kubectl(["apply", "-f", "-"], `apiVersion: v1\nkind: Namespace\nmetadata:\n  name: ${NS}\n`);
-        await kubectl(["apply", "-f", "-"], deploymentYaml(req.id, req.image));
+        await runKubectl(
+          ["apply", "-f", "-"],
+          `apiVersion: v1\nkind: Namespace\nmetadata:\n  name: ${NS}\n`
+        );
+        await runKubectl(["apply", "-f", "-"], deploymentYaml(req.id, req.image));
         endpoint = serviceEndpoint(req.id);
         logger.info("k8s apply ok", { id: req.id, endpoint });
       } catch (err) {
@@ -109,7 +116,6 @@ export class K8sOrchestrator implements PluginOrchestrator {
         );
       }
     } else if (!endpoint && req.image) {
-      // DNS-only registration (Deployment assumed external)
       endpoint = serviceEndpoint(req.id);
       logger.info("k8s DNS endpoint registered (no apply)", { id: req.id, endpoint });
     }
@@ -139,7 +145,6 @@ export class K8sOrchestrator implements PluginOrchestrator {
     }
 
     if (!healthy) {
-      // In cluster DNS may only work inside cluster — still mark ready if APPLY skipped
       if (!APPLY && req.image && !req.endpoint) {
         record.status = "ready";
         record.lastError = "health not verified from this host (in-cluster DNS)";
@@ -170,8 +175,22 @@ export class K8sOrchestrator implements PluginOrchestrator {
 
     if (APPLY) {
       try {
-        await kubectl(["delete", "deployment", `plugin-${id}`, "-n", NS, "--ignore-not-found"]);
-        await kubectl(["delete", "service", `plugin-${id}`, "-n", NS, "--ignore-not-found"]);
+        await runKubectl([
+          "delete",
+          "deployment",
+          `plugin-${id}`,
+          "-n",
+          NS,
+          "--ignore-not-found",
+        ]);
+        await runKubectl([
+          "delete",
+          "service",
+          `plugin-${id}`,
+          "-n",
+          NS,
+          "--ignore-not-found",
+        ]);
       } catch (err) {
         logger.warn("k8s delete failed", { id, error: String(err) });
       }

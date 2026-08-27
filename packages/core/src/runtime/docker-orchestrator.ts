@@ -30,7 +30,6 @@ function containerName(id: string): string {
 }
 
 function allocatePort(): number {
-  // Prefer ports not currently in catalog
   const used = new Set(
     runtimeCatalog.list().map((r) => {
       try {
@@ -52,7 +51,6 @@ export class DockerOrchestrator implements PluginOrchestrator {
       throw new Error("DockerOrchestrator requires image or endpoint");
     }
 
-    // If only endpoint given, fall through as register-only
     if (req.endpoint && !req.image) {
       return this.registerEndpoint(req);
     }
@@ -61,7 +59,6 @@ export class DockerOrchestrator implements PluginOrchestrator {
     const hostPort = allocatePort();
     const image = req.image!;
 
-    // Remove existing container with same name
     try {
       await docker(["rm", "-f", name]);
     } catch {
@@ -77,6 +74,11 @@ export class DockerOrchestrator implements PluginOrchestrator {
       });
     }
 
+    const portMapping = `${hostPort}:8080`;
+    const memory = process.env.PLUGIN_MEMORY || "256m";
+    const cpus = process.env.PLUGIN_CPUS || "0.5";
+    const pluginIdEnv = `PLUGIN_ID=${req.id}`;
+
     const runArgs = [
       "run",
       "-d",
@@ -87,31 +89,32 @@ export class DockerOrchestrator implements PluginOrchestrator {
       "--network",
       NETWORK,
       "-p",
-      `${hostPort}:8080",
+      portMapping,
       "--memory",
-      process.env.PLUGIN_MEMORY || "256m",
+      memory,
       "--cpus",
-      process.env.PLUGIN_CPUS || "0.5",
+      cpus,
       "--read-only",
       "--tmpfs",
       "/tmp",
       "-e",
-      `PLUGIN_ID=${req.id}`,
+      pluginIdEnv,
       "-e",
       "PORT=8080",
+      image,
     ];
 
     if (process.env.PLUGIN_DOCKER_EXTRA_ARGS) {
-      runArgs.push(...process.env.PLUGIN_DOCKER_EXTRA_ARGS.split(" ").filter(Boolean));
+      const extra = process.env.PLUGIN_DOCKER_EXTRA_ARGS.split(" ").filter(Boolean);
+      runArgs.splice(runArgs.length - 1, 0, ...extra);
     }
-
-    runArgs.push(image);
 
     let containerId: string;
     try {
       containerId = await docker(runArgs);
     } catch (err) {
-      throw new Error(`docker run failed: ${err instanceof Error ? err.message : String(err)}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      throw new Error(`docker run failed: ${detail}`);
     }
 
     const endpoint = `http://${HOST}:${hostPort}`;
@@ -126,7 +129,6 @@ export class DockerOrchestrator implements PluginOrchestrator {
     };
     runtimeCatalog.upsert(record);
 
-    // Wait for health
     const transport = new HttpPluginTransport(endpoint);
     let healthy = false;
     for (let i = 0; i < 30; i++) {
