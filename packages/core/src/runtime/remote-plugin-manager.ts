@@ -13,15 +13,21 @@ import { HttpPluginTransport } from "./http-transport.js";
 import { metrics } from "../metrics.js";
 import { logger } from "../logger.js";
 import type { RuntimeToolDefinition } from "./types.js";
+import { sessionHub } from "./session-hub.js";
 
 /**
  * Catalog-backed plugin manager for container (or any HTTP) runtimes.
  * tools/list and tools/call always read the current catalog — hot-reload safe.
+ * On catalog change: clear cache + notify clients (tools/list_changed).
  */
 export class RemotePluginManager {
   private unsub: (() => void) | null = null;
+  private server: Server | null = null;
 
   async attachToServer(server: Server): Promise<void> {
+    this.server = server;
+    sessionHub.register(server);
+
     const buildTools = async (): Promise<
       Array<RuntimeToolDefinition & { qualifiedName: string; pluginId: string }>
     > => {
@@ -74,7 +80,6 @@ export class RemotePluginManager {
       const qualified = request.params.name;
       const args = (request.params.arguments ?? {}) as Record<string, unknown>;
 
-      // Resolve plugin by prefix match against ready catalog
       const ready = runtimeCatalog.readyPlugins();
       let pluginId: string | null = null;
       let localName = qualified;
@@ -136,15 +141,19 @@ export class RemotePluginManager {
       }
     });
 
-    // Invalidate manifest cache on catalog change
     this.unsub = runtimeCatalog.onChange(() => {
       clearManifestCache();
       logger.debug("catalog changed — manifest cache cleared");
+      void sessionHub.notifyToolsListChanged();
     });
   }
 
   async shutdown(): Promise<void> {
     this.unsub?.();
     this.unsub = null;
+    if (this.server) {
+      sessionHub.unregister(this.server);
+      this.server = null;
+    }
   }
 }

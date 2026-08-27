@@ -1,17 +1,19 @@
 /**
- * Lightweight orchestrator interface + in-memory stub.
- * Production: swap for DockerOrchestrator (dockerode) or K8s.
+ * Plugin orchestrator interface + composite factory.
  */
 import type { PluginRuntimeRecord } from "./types.js";
 import { runtimeCatalog } from "./catalog.js";
 import { HttpPluginTransport } from "./http-transport.js";
 import { logger } from "../logger.js";
+import { DockerOrchestrator } from "./docker-orchestrator.js";
+import { K8sOrchestrator } from "./k8s-orchestrator.js";
 
 export interface DeployRequest {
   id: string;
   version: string;
-  /** Pre-started endpoint (dev) or image ref for real orchestrators */
+  /** Pre-started endpoint (dev) or service URL */
   endpoint?: string;
+  /** Container image ref for Docker/K8s */
   image?: string;
 }
 
@@ -23,7 +25,6 @@ export interface PluginOrchestrator {
 
 /**
  * Registers an already-running Tool Runtime HTTP server into the catalog.
- * Used for local container sidecars and integration tests without Docker API.
  */
 export class EndpointOrchestrator implements PluginOrchestrator {
   async deploy(req: DeployRequest): Promise<PluginRuntimeRecord> {
@@ -86,4 +87,24 @@ export class EndpointOrchestrator implements PluginOrchestrator {
   }
 }
 
-export const orchestrator: PluginOrchestrator = new EndpointOrchestrator();
+/**
+ * ORCHESTRATOR=endpoint|docker|k8s (default: endpoint)
+ * - endpoint: register pre-started HTTP runtimes
+ * - docker: docker pull/run with port publish
+ * - k8s: Service DNS + optional kubectl apply
+ */
+export function createOrchestrator(): PluginOrchestrator {
+  const mode = (process.env.ORCHESTRATOR || "endpoint").toLowerCase();
+  if (mode === "docker") {
+    logger.info("using DockerOrchestrator");
+    return new DockerOrchestrator();
+  }
+  if (mode === "k8s" || mode === "kubernetes") {
+    logger.info("using K8sOrchestrator");
+    return new K8sOrchestrator();
+  }
+  logger.info("using EndpointOrchestrator");
+  return new EndpointOrchestrator();
+}
+
+export const orchestrator: PluginOrchestrator = createOrchestrator();

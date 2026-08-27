@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { parse } from "node:url";
 import {
   clearManifestCache,
   runtimeCatalog,
@@ -8,6 +7,7 @@ import { orchestrator } from "./runtime/orchestrator.js";
 import type { PluginRuntimeRecord } from "./runtime/types.js";
 import { metrics } from "./metrics.js";
 import { logger } from "./logger.js";
+import { sessionHub } from "./runtime/session-hub.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -17,10 +17,6 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/**
- * Catalog / deploy internal routes for hot-reload + container runtime.
- * Returns true if handled.
- */
 export async function handleCatalogRoutes(
   req: IncomingMessage,
   res: ServerResponse,
@@ -33,6 +29,8 @@ export async function handleCatalogRoutes(
       JSON.stringify({
         epoch: runtimeCatalog.getEpoch(),
         plugins: runtimeCatalog.list(),
+        sessions: sessionHub.size,
+        orchestrator: process.env.ORCHESTRATOR || "endpoint",
       })
     );
     return true;
@@ -51,6 +49,7 @@ export async function handleCatalogRoutes(
       }
       clearManifestCache();
       runtimeCatalog.replaceAll(body.plugins);
+      // onChange → list_changed fanout
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -67,19 +66,18 @@ export async function handleCatalogRoutes(
     return true;
   }
 
-  // Hot-register a single running endpoint (no Core restart)
   if (req.method === "POST" && path === "/internal/catalog/deploy") {
     metrics.recordHttp(path);
     try {
       const body = JSON.parse(await readBody(req)) as {
         id: string;
         version?: string;
-        endpoint: string;
+        endpoint?: string;
         image?: string;
       };
-      if (!body.id || !body.endpoint) {
+      if (!body.id || (!body.endpoint && !body.image)) {
         res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "id and endpoint required" }));
+        res.end(JSON.stringify({ error: "id and (endpoint or image) required" }));
         return true;
       }
       const record = await orchestrator.deploy({
@@ -89,7 +87,13 @@ export async function handleCatalogRoutes(
         image: body.image,
       });
       res.writeHead(201, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ plugin: record, epoch: runtimeCatalog.getEpoch() }));
+      res.end(
+        JSON.stringify({
+          plugin: record,
+          epoch: runtimeCatalog.getEpoch(),
+          orchestrator: process.env.ORCHESTRATOR || "endpoint",
+        })
+      );
     } catch (err) {
       metrics.recordHttp(path, true);
       logger.error("deploy failed", { error: String(err) });
@@ -116,13 +120,13 @@ export async function handleCatalogRoutes(
 
   if (req.method === "POST" && path === "/internal/catalog/rediscover") {
     metrics.recordHttp(path);
-    // Probe all ready endpoints; mark unhealthy
     const results = [];
     for (const p of runtimeCatalog.list()) {
       const ok = await orchestrator.healthCheck(p.id);
       results.push({ id: p.id, healthy: ok });
     }
     clearManifestCache();
+    await sessionHub.notifyToolsListChanged();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
@@ -135,8 +139,4 @@ export async function handleCatalogRoutes(
   }
 
   return false;
-}
-
-export function catalogPathHint(reqUrl: string): string {
-  return parse(reqUrl || "", true).pathname || "/";
 }
