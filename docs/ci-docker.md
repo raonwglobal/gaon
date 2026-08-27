@@ -1,50 +1,41 @@
-# Docker Images CI
+# Docker Images CI & Compose
 
-Workflow: [`.github/workflows/docker-images.yml`](../.github/workflows/docker-images.yml)
+## GitHub Actions
 
-## Triggers
+Workflow: `.github/workflows/docker-images.yml`
 
-| Event | Build | Push to GHCR |
-|-------|-------|--------------|
-| PR → `main` | ✅ | ❌ |
-| Push → `main` | ✅ | ✅ (`:latest`, `:main`, `:sha-…`) |
-| Tag `v*` | ✅ | ✅ (semver tags) |
-| `workflow_dispatch` | ✅ | ✅ (if not from a PR context) |
+Builds and pushes (on `main` / tags):
 
-## Images
+- `ghcr.io/<owner>/<repo>/core`
+- `ghcr.io/<owner>/<repo>/control-plane`
+- `ghcr.io/<owner>/<repo>/dashboard`
+- `ghcr.io/<owner>/<repo>/plugin-runtime`
 
-| Name | Dockerfile | Context |
-|------|------------|---------|
-| `core` | `packages/core/Dockerfile` | repo root |
-| `control-plane` | `packages/control-plane/Dockerfile` | repo root |
-| `dashboard` | `packages/dashboard/Dockerfile` | repo root |
-| `plugin-runtime` | `packages/plugin-runtime/Dockerfile` | `packages/plugin-runtime` |
+Dockerfiles are **self-contained** (copy package sources, `npm install && npm run build`) so CI does not depend on a root lockfile or workspace hoist.
 
-Published as:
-
-```text
-ghcr.io/<owner>/<repo>/<image>:<tag>
-```
-
-Example for this repo:
-
-```text
-ghcr.io/raonwglobal/gaon/core:latest
-ghcr.io/raonwglobal/gaon/control-plane:latest
-ghcr.io/raonwglobal/gaon/dashboard:latest
-ghcr.io/raonwglobal/gaon/plugin-runtime:latest
-```
-
-## Pull
+## docker-compose
 
 ```bash
-echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-docker pull ghcr.io/raonwglobal/gaon/core:latest
+docker compose up --build
 ```
 
-Package visibility: repository **Settings → Packages** (or each package’s settings).  
-First push may require linking the package to the repo and setting visibility.
+| Service | Port | Role |
+|---------|------|------|
+| `core` | 3000 | MCP SSE server |
+| `plugin-runtime` | 8080 | Tool Runtime API (echo) sidecar |
+| `control-plane` | 3001 | Admin API |
+| `dashboard` | 5173→80 | UI |
 
-## Permissions
+### Container mode example
 
-Workflow uses `packages: write` with `GITHUB_TOKEN`. No extra secrets required for GHCR.
+```bash
+PLUGIN_RUNTIME=container docker compose up --build
+
+# Register runtime into Core catalog (hot path)
+curl -X POST http://localhost:3001/api/catalog/deploy \
+  -H "Content-Type: application/json" \
+  -d '{"id":"echo","endpoint":"http://plugin-runtime:8080","version":"1.0.0"}'
+```
+
+From the host, plugin-runtime is `http://127.0.0.1:8080`.  
+From Core container, use service name `http://plugin-runtime:8080`.

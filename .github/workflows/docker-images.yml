@@ -92,5 +92,3 @@ jobs:
           for img in core control-plane dashboard plugin-runtime; do
             echo "| \`$img\` | \`$REPO/$img:latest\` |" >> "$GITHUB_STEP_SUMMARY"
           done
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Push to **main** or tag \`v*\` publishes to GHCR. PRs build only (no push)." >> "$GITHUB_STEP_SUMMARY"
