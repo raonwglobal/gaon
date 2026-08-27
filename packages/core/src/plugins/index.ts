@@ -1,4 +1,4 @@
-import type { McpPluginFactory } from "./interface.js";
+import type { McpPlugin, McpPluginFactory } from "./interface.js";
 import { buildDiscoveredFactories, resolvePluginsDir } from "./discover.js";
 
 /** Built-in static factories (always available). */
@@ -28,6 +28,17 @@ export async function ensurePluginDiscovery(): Promise<void> {
 
 export function listBuiltinPluginIds(): string[] {
   return Object.keys(PLUGIN_FACTORIES);
+}
+
+export async function createPlugin(id: string): Promise<McpPlugin> {
+  await ensurePluginDiscovery();
+  const factory = PLUGIN_FACTORIES[id];
+  if (!factory) {
+    throw new Error(
+      `Unknown plugin factory: ${id}. Known: ${Object.keys(PLUGIN_FACTORIES).join(", ") || "(none)"}`
+    );
+  }
+  return factory();
 }
 
 /** test helper */

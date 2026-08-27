@@ -12,7 +12,7 @@ import {
 import { HttpPluginTransport } from "./http-transport.js";
 import { metrics } from "../metrics.js";
 import { logger } from "../logger.js";
-import type { RuntimeCallResult, RuntimeToolDefinition } from "./types.js";
+import type { RuntimeToolDefinition } from "./types.js";
 import { sessionHub } from "./session-hub.js";
 
 export class RemotePluginManager {
@@ -71,56 +71,68 @@ export class RemotePluginManager {
       };
     });
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const qualified = request.params.name;
-      const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+    server.setRequestHandler(
+      CallToolRequestSchema,
+      (async (request: { params: { name: string; arguments?: Record<string, unknown> } }) => {
+        const qualified = request.params.name;
+        const args = (request.params.arguments ?? {}) as Record<string, unknown>;
 
-      const ready = runtimeCatalog.readyPlugins();
-      let pluginId: string | null = null;
-      let localName = qualified;
+        const ready = runtimeCatalog.readyPlugins();
+        let pluginId: string | null = null;
+        let localName = qualified;
 
-      for (const rt of ready) {
-        const prefix = `${rt.id}_`;
-        if (qualified.startsWith(prefix)) {
-          pluginId = rt.id;
-          localName = qualified.slice(prefix.length);
-          break;
+        for (const rt of ready) {
+          const prefix = `${rt.id}_`;
+          if (qualified.startsWith(prefix)) {
+            pluginId = rt.id;
+            localName = qualified.slice(prefix.length);
+            break;
+          }
+          if (qualified === rt.id) {
+            pluginId = rt.id;
+            break;
+          }
         }
-        if (qualified === rt.id) {
-          pluginId = rt.id;
-          break;
+
+        if (!pluginId) {
+          metrics.recordToolCall(qualified, true);
+          return {
+            content: [{ type: "text" as const, text: `Unknown tool: ${qualified}` }],
+            isError: true,
+          };
         }
-      }
 
-      const fail = (text: string): RuntimeCallResult => ({
-        content: [{ type: "text", text }],
-        isError: true,
-      });
+        const rt = runtimeCatalog.get(pluginId);
+        if (!rt || rt.status !== "ready") {
+          metrics.recordToolCall(qualified, true);
+          return {
+            content: [{ type: "text" as const, text: `Plugin ${pluginId} is not ready` }],
+            isError: true,
+          };
+        }
 
-      if (!pluginId) {
-        metrics.recordToolCall(qualified, true);
-        return fail(`Unknown tool: ${qualified}`) as RuntimeCallResult;
-      }
-
-      const rt = runtimeCatalog.get(pluginId);
-      if (!rt || rt.status !== "ready") {
-        metrics.recordToolCall(qualified, true);
-        return fail(`Plugin ${pluginId} is not ready`) as RuntimeCallResult;
-      }
-
-      try {
-        const transport = new HttpPluginTransport(rt.endpoint);
-        const result = await transport.callTool({
-          name: localName,
-          arguments: args,
-        });
-        metrics.recordToolCall(qualified, Boolean(result.isError));
-        return result as RuntimeCallResult;
-      } catch (err) {
-        metrics.recordToolCall(qualified, true);
-        return fail(err instanceof Error ? err.message : String(err)) as RuntimeCallResult;
-      }
-    });
+        try {
+          const transport = new HttpPluginTransport(rt.endpoint);
+          const result = await transport.callTool({
+            name: localName,
+            arguments: args,
+          });
+          metrics.recordToolCall(qualified, Boolean(result.isError));
+          return result;
+        } catch (err) {
+          metrics.recordToolCall(qualified, true);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: err instanceof Error ? err.message : String(err),
+              },
+            ],
+            isError: true,
+          };
+        }
+      }) as never
+    );
 
     this.unsub = runtimeCatalog.onChange(() => {
       clearManifestCache();

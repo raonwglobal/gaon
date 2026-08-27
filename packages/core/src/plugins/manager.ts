@@ -3,7 +3,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { McpPlugin, PluginToolDefinition, ToolCallResult } from "./interface.js";
+import type { McpPlugin, PluginToolDefinition } from "./interface.js";
 import { createPlugin } from "./index.js";
 import { metrics } from "../metrics.js";
 import { logger } from "../logger.js";
@@ -58,40 +58,44 @@ export class PluginManager {
       })),
     }));
 
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      const name = request.params.name;
-      const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-      const owner = this.toolOwner.get(name);
+    // MCP SDK handler generics vary across minor versions — cast keeps build stable
+    server.setRequestHandler(
+      CallToolRequestSchema,
+      (async (request: { params: { name: string; arguments?: Record<string, unknown> } }) => {
+        const name = request.params.name;
+        const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+        const owner = this.toolOwner.get(name);
 
-      if (!owner?.callTool) {
-        metrics.recordToolCall(name, true);
-        return {
-          content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
-          isError: true,
-        } as ToolCallResult;
-      }
+        if (!owner?.callTool) {
+          metrics.recordToolCall(name, true);
+          return {
+            content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
+            isError: true,
+          };
+        }
 
-      const localName = name.startsWith(`${owner.manifest.id}_`)
-        ? name.slice(owner.manifest.id.length + 1)
-        : name;
+        const localName = name.startsWith(`${owner.manifest.id}_`)
+          ? name.slice(owner.manifest.id.length + 1)
+          : name;
 
-      try {
-        const result = await owner.callTool({ name: localName, arguments: args });
-        metrics.recordToolCall(name, Boolean(result.isError));
-        return result as ToolCallResult;
-      } catch (err) {
-        metrics.recordToolCall(name, true);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: err instanceof Error ? err.message : String(err),
-            },
-          ],
-          isError: true,
-        } as ToolCallResult;
-      }
-    });
+        try {
+          const result = await owner.callTool({ name: localName, arguments: args });
+          metrics.recordToolCall(name, Boolean(result.isError));
+          return result;
+        } catch (err) {
+          metrics.recordToolCall(name, true);
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: err instanceof Error ? err.message : String(err),
+              },
+            ],
+            isError: true,
+          };
+        }
+      }) as never
+    );
   }
 
   async shutdownAll(): Promise<void> {

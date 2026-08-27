@@ -38,4 +38,4 @@ export interface McpPlugin {
   healthCheck?(): Promise<{ status: "ok" | "degraded" | "error"; message?: string }>;
 }
 
-export type McpPluginFactory = () => Promise<McpPlugin>;
+export type McpPluginFactory = () => Promise<McpPlugin> | McpPlugin;
