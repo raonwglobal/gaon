@@ -3,7 +3,15 @@
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 const execFileAsync = promisify(execFile);
@@ -30,71 +38,138 @@ export interface InstallResult {
   detail?: string;
 }
 
+function formatExecError(err: unknown, cmd: string): string {
+  if (!err || typeof err !== "object") return String(err);
+  const e = err as {
+    message?: string;
+    code?: string | number;
+    stderr?: string | Buffer;
+    stdout?: string | Buffer;
+  };
+  const stderr = e.stderr ? String(e.stderr).trim() : "";
+  const stdout = e.stdout ? String(e.stdout).trim() : "";
+  const parts = [
+    e.message || `${cmd} failed`,
+    stderr && `stderr: ${stderr}`,
+    stdout && `stdout: ${stdout}`,
+    e.code != null && `code: ${e.code}`,
+  ].filter(Boolean);
+  return parts.join(" | ");
+}
+
 async function run(cmd: string, args: string[], cwd?: string): Promise<string> {
-  const { stdout, stderr } = await execFileAsync(cmd, args, {
-    cwd,
-    timeout: 120_000,
-    maxBuffer: 5 * 1024 * 1024,
-    env: { ...process.env },
-  });
-  return (stdout || stderr || "").toString();
+  try {
+    const { stdout, stderr } = await execFileAsync(cmd, args, {
+      cwd,
+      timeout: 180_000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+      },
+    });
+    return (stdout || stderr || "").toString();
+  } catch (err) {
+    throw new Error(formatExecError(err, `${cmd} ${args.join(" ")}`));
+  }
+}
+
+function assertWritable(dir: string): void {
+  try {
+    mkdirSync(dir, { recursive: true });
+    accessSync(dir, constants.W_OK);
+  } catch (err) {
+    throw new Error(
+      `PLUGINS_DIR is not writable: ${dir} (${err instanceof Error ? err.message : String(err)}). ` +
+        `Mount ./plugins as read-write on control-plane (not :ro).`
+    );
+  }
 }
 
 export async function installPlugin(req: InstallRequest): Promise<InstallResult> {
-  const root = resolveInstallDir();
-  if (!existsSync(root)) mkdirSync(root, { recursive: true });
+  const id = req.id.trim();
+  if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+    return {
+      ok: false,
+      detail: "id must be alphanumeric, hyphen, or underscore",
+    };
+  }
 
-  const target = join(root, req.id);
+  const root = resolveInstallDir();
+  try {
+    assertWritable(root);
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
+
+  const target = join(root, id);
   if (existsSync(target)) {
-    rmSync(target, { recursive: true, force: true });
+    try {
+      rmSync(target, { recursive: true, force: true });
+    } catch (err) {
+      return {
+        ok: false,
+        detail: `Cannot remove existing ${target}: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
   }
 
   try {
     if (req.source.type === "git") {
+      try {
+        await run("git", ["--version"]);
+      } catch {
+        return {
+          ok: false,
+          detail:
+            "git is not installed in the control-plane image. Rebuild the control-plane image (apk add git).",
+        };
+      }
+
+      const ref = req.source.ref.trim();
+      if (!ref) return { ok: false, detail: "source.ref (git URL) is required" };
+
       const args = ["clone", "--depth", "1"];
-      if (req.source.version) args.push("--branch", req.source.version);
-      args.push(req.source.ref, target);
+      if (req.source.version) {
+        args.push("--branch", req.source.version.trim());
+      }
+      args.push(ref, target);
       await run("git", args);
     } else if (req.source.type === "npm") {
       mkdirSync(target, { recursive: true });
-      const pkg = req.source.version
-        ? `${req.source.ref}@${req.source.version}`
-        : req.source.ref;
-      // npm pack into temp then extract — use npm install in folder
+      const depName = req.source.ref.trim();
+      if (!depName) return { ok: false, detail: "source.ref (npm package) is required" };
+
       writeFileSync(
         join(target, "package.json"),
         JSON.stringify(
           {
-            name: `@mcp-sse/plugin-${req.id}`,
+            name: `@mcp-sse/plugin-${id}`,
             private: true,
             type: "module",
-            mcpPluginId: req.id,
-            dependencies: { [req.source.ref]: req.source.version || "latest" },
+            mcpPluginId: id,
+            dependencies: { [depName]: req.source.version || "latest" },
           },
           null,
           2
         )
       );
       await run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], target);
-      // shim index that re-exports package main
-      const depName = req.source.ref;
       writeFileSync(
         join(target, "index.js"),
-        `export { default } from ${JSON.stringify(depName)};
-export * from ${JSON.stringify(depName)};
-`
+        `export { default } from ${JSON.stringify(depName)};\n` +
+          `export * from ${JSON.stringify(depName)};\n`
       );
     } else {
-      return { ok: false, detail: "Unsupported source type" };
+      return { ok: false, detail: "Unsupported source type (use git or npm)" };
     }
 
-    // ensure mcpPluginId in package.json if present
     const pkgPath = join(target, "package.json");
     if (existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
         if (!pkg.mcpPluginId) {
-          pkg.mcpPluginId = req.id;
+          pkg.mcpPluginId = id;
           writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
         }
       } catch {
@@ -104,6 +179,11 @@ export * from ${JSON.stringify(depName)};
 
     return { ok: true, path: target };
   } catch (err) {
+    try {
+      if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
 }
