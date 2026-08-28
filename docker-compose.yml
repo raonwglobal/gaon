@@ -64,6 +64,10 @@ services:
     image: gaon/dashboard:local
     ports:
       - "5173:80"
+    environment:
+      # Injected into /config.json at container start for Settings / API auth
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
+      - CONTROL_API_BASE=${CONTROL_API_BASE:-}
     depends_on:
       - control-plane
     restart: unless-stopped

@@ -14,5 +14,9 @@ RUN npm install && npm run build
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY packages/dashboard/nginx.conf /etc/nginx/conf.d/default.conf
+COPY packages/dashboard/docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+ENV ADMIN_TOKEN=""
+ENV CONTROL_API_BASE=""
+ENTRYPOINT ["/docker-entrypoint.sh"]
