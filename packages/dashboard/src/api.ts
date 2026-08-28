@@ -12,7 +12,8 @@ function headers(): HeadersInit {
 async function parseError(r: Response): Promise<string> {
   const text = await r.text();
   try {
-    const j = JSON.parse(text) as { error?: string };
+    const j = JSON.parse(text) as { error?: string; detail?: string };
+    if (j.detail) return j.error ? `${j.error}: ${j.detail}` : j.detail;
     return j.error || text || r.statusText;
   } catch {
     return text || r.statusText;
