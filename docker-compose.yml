@@ -52,7 +52,8 @@ services:
       - PLUGINS_DIR=/plugins
     volumes:
       - control-data:/data
-      - ./plugins:/plugins:ro
+      # read-write: git/npm install writes here (shared with core)
+      - ./plugins:/plugins
     depends_on:
       - core
     restart: unless-stopped
