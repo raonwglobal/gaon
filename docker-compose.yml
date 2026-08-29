@@ -19,10 +19,13 @@ services:
       - API_SECRET_TOKEN=${API_SECRET_TOKEN:-}
       - GATEWAY_REQUIRE_AUTH=${GATEWAY_REQUIRE_AUTH:-false}
       - GATEWAY_TOKENS=${GATEWAY_TOKENS:-}
+      - CONTROL_URL=http://control-plane:3001
+      - VAULT_SESSION_INJECT=${VAULT_SESSION_INJECT:-true}
     volumes:
       - ./plugins:/app/plugins:ro
     depends_on:
       - plugin-runtime
+      - control-plane
     restart: unless-stopped
 
   plugin-runtime:

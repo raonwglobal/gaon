@@ -10,6 +10,7 @@ import { handleAuth } from "./routes/auth.js";
 import { handleUsers } from "./routes/users.js";
 import { handleVault } from "./routes/vault.js";
 import { handleAudit } from "./routes/audit.js";
+import { handleInternalVault } from "./routes/internal-vault.js";
 import { syncAllToCore } from "./core-sync.js";
 import { resolveAuth, requireRole, type AuthContext } from "./auth/session.js";
 import { userStore } from "./auth/users.js";
@@ -66,6 +67,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  if (await handleInternalVault(req, res, pathname)) return;
   if (await handleAuth(req, res, pathname)) return;
 
   const auth = resolveAuth(req);
