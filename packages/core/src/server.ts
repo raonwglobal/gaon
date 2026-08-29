@@ -183,11 +183,13 @@ export function createMcpSseServer(config: ServerConfig) {
             setPluginOwners(body.owners);
           }
           const rediscovered = await reloadPluginDiscovery();
+          const live = await sessionManager.reloadAllSessionTools();
           logger.info("plugins synced", {
             enabled: runtimeState.enabledPlugins,
             owners: Object.keys(runtimeState.pluginOwners).length,
             discoveryEpoch: rediscovered.epoch,
             factories: rediscovered.ids,
+            liveSessions: live,
           });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
@@ -196,7 +198,8 @@ export function createMcpSseServer(config: ServerConfig) {
               enabled: runtimeState.enabledPlugins,
               discoveryEpoch: rediscovered.epoch,
               factories: rediscovered.ids,
-              note: "factories reloaded; new SSE sessions pick up enabled plugins",
+              liveSessions: live,
+              note: "factories rediscovered; open sessions tool maps updated",
             })
           );
         } catch {
@@ -210,12 +213,14 @@ export function createMcpSseServer(config: ServerConfig) {
       if (req.method === "POST" && path === "/internal/plugins/reload") {
         metrics.recordHttp(path);
         const rediscovered = await reloadPluginDiscovery();
+        const live = await sessionManager.reloadAllSessionTools();
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(
           JSON.stringify({
             ok: true,
             discoveryEpoch: rediscovered.epoch,
             factories: rediscovered.ids,
+            liveSessions: live,
           })
         );
         return;
@@ -244,8 +249,8 @@ export function createMcpSseServer(config: ServerConfig) {
               typeof body.maxSessions === "number" ? body.maxSessions : undefined,
             apiSecretToken:
               typeof body.apiSecretToken === "string"
-                ? body.apiSecretToken
-                : undefined,
+              ? body.apiSecretToken
+              : undefined,
             sessionIdleTimeoutMs:
               typeof body.sessionIdleTimeoutMs === "number"
                 ? body.sessionIdleTimeoutMs
