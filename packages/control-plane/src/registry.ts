@@ -5,11 +5,12 @@ export class PluginRegistry {
   list(): PluginRecord[] {
     return store.listPlugins();
   }
-
+  listForUser(userId: string, isAdmin: boolean): PluginRecord[] {
+    return store.listPluginsForUser(userId, isAdmin);
+  }
   get(id: string): PluginRecord | null {
     return store.getPlugin(id) ?? null;
   }
-
   register(input: {
     id: string;
     name: string;
@@ -18,6 +19,7 @@ export class PluginRegistry {
     source: PluginRecord["source"];
     config?: Record<string, unknown>;
     enabled?: boolean;
+    ownerUserId?: string;
   }): PluginRecord {
     const now = Date.now();
     const existing = store.getPlugin(input.id);
@@ -29,6 +31,7 @@ export class PluginRegistry {
       enabled: input.enabled ?? existing?.enabled ?? true,
       config: input.config ?? existing?.config ?? {},
       source: input.source,
+      ownerUserId: input.ownerUserId ?? existing?.ownerUserId,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -36,7 +39,6 @@ export class PluginRegistry {
     void syncPluginsToCore();
     return record;
   }
-
   enable(id: string): PluginRecord | null {
     const p = store.getPlugin(id);
     if (!p) return null;
@@ -46,7 +48,6 @@ export class PluginRegistry {
     void syncPluginsToCore();
     return p;
   }
-
   disable(id: string): PluginRecord | null {
     const p = store.getPlugin(id);
     if (!p) return null;
@@ -56,7 +57,6 @@ export class PluginRegistry {
     void syncPluginsToCore();
     return p;
   }
-
   updateConfig(id: string, config: Record<string, unknown>): PluginRecord | null {
     const p = store.getPlugin(id);
     if (!p) return null;
@@ -66,16 +66,13 @@ export class PluginRegistry {
     void syncPluginsToCore();
     return p;
   }
-
   uninstall(id: string): boolean {
     const ok = store.deletePlugin(id);
     if (ok) void syncPluginsToCore();
     return ok;
   }
-
   enabledIds(): string[] {
     return store.listPlugins().filter((p) => p.enabled).map((p) => p.id);
   }
 }
-
 export const registry = new PluginRegistry();
