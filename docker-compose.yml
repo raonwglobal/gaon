@@ -13,11 +13,9 @@ services:
       - RATE_LIMIT_PER_MIN=120
       - MAX_SESSIONS=500
       - PLUGINS_DIR=/app/plugins
-      # inprocess (default) | container
       - PLUGIN_RUNTIME=${PLUGIN_RUNTIME:-inprocess}
       - ORCHESTRATOR=${ORCHESTRATOR:-endpoint}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
     volumes:
       - ./plugins:/app/plugins:ro
     depends_on:
@@ -45,17 +43,19 @@ services:
       - "3001:3001"
     environment:
       - CONTROL_PORT=3001
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
+      - BOOTSTRAP_ADMIN_USER=${BOOTSTRAP_ADMIN_USER:-admin}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-changeme-please}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
       - CORE_URL=http://core:3000
       - DATABASE_PATH=/data/platform.json
+      - USERS_PATH=/data/users.json
       - PLUGINS_DIR=/plugins
+      - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-*}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
     volumes:
       - control-data:/data
-      # read-write: git/npm install writes here (shared with core)
       - ./plugins:/plugins
-    depends_on:
-      - core
     restart: unless-stopped
 
   dashboard:
@@ -66,8 +66,6 @@ services:
     ports:
       - "5173:80"
     environment:
-      # Injected into /config.json at container start for Settings / API auth
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-change-me}
       - CONTROL_API_BASE=${CONTROL_API_BASE:-}
     depends_on:
       - control-plane
