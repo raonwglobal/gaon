@@ -160,3 +160,29 @@ export async function fetchLogs(opts?: { level?: string; limit?: number }) {
   const q = qs.toString();
   return apiGet(`/api/logs${q ? `?${q}` : ""}`);
 }
+
+export async function fetchVaultSecrets() {
+  return apiGet("/api/vault/secrets") as Promise<{
+    secrets: { id: string; name: string; userId: string; createdAt: number }[];
+  }>;
+}
+
+export async function putVaultSecret(name: string, value: string) {
+  return apiSend("/api/vault/secrets", "POST", { name, value });
+}
+
+export async function deleteVaultSecret(id: string) {
+  return apiSend(`/api/vault/secrets/${encodeURIComponent(id)}`, "DELETE");
+}
+
+export async function fetchAudit(limit = 100) {
+  return apiGet(`/api/audit?limit=${limit}`) as Promise<{
+    events: {
+      ts: number;
+      actorName?: string;
+      action: string;
+      resource?: string;
+      detail?: Record<string, unknown>;
+    }[];
+  }>;
+}
