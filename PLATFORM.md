@@ -2,18 +2,15 @@
 
 ## Architecture (v2)
 
-- **Management plane**: Dashboard + Control Plane (login, users, per-user connectors)
-- **Data plane**: Core MCP SSE Gateway (deploy separately if needed)
+- **Management plane**: Dashboard + Control Plane
+- **Data plane**: Core MCP SSE Gateway
 - Design: [docs/design-gateway-v2.md](docs/design-gateway-v2.md)
 
-## Auth (management plane)
+## Auth (management)
 
 ```bash
 export BOOTSTRAP_ADMIN_PASSWORD='your-strong-password'
 ```
-
-- Session cookie `gaon_session` (HttpOnly)
-- Roles: viewer, user, operator, admin
 
 ## Gateway client auth
 
@@ -22,26 +19,31 @@ GATEWAY_REQUIRE_AUTH=true
 API_SECRET_TOKEN=your-gateway-token
 ```
 
-Clients: `Authorization: Bearer <token>` or `X-API-Key`.
-
-## Session scope & secrets (MCP clients)
+## Session scope & secrets
 
 ```http
 GET /sse
 Authorization: Bearer <gateway-token>
 X-User-Id: <user-uuid>
 X-Enabled-Plugins: weather,echo
-X-Session-Secrets: {"WEATHER_API_KEY":"sk-..."}
+X-Session-Secrets: {"OVERRIDE_KEY":"..."}
 ```
 
-- `X-Enabled-Plugins` — tools/list limited to these plugins for the session
-- `X-User-Id` — when Control Plane synced `owners`, only that user's plugins load
-- `X-Session-Secrets` — JSON (or base64 JSON); memory only; cleared on disconnect
-- Plugins: `ctx.getSecret(name)`, `ctx.upstreamFetch(url, { secretName })`
+## Vault → SSE session auto-inject
 
-## Vault
+1. Dashboard vault tab: user stores `WEATHER_API_KEY` etc.
+2. MCP client connects with `X-User-Id` (or `GATEWAY_TOKEN_MAP`)
+3. Core calls Control `GET /internal/vault/session-secrets?userId=` with `INTERNAL_TOKEN`
+4. Secrets load into session memory; plugins use `ctx.getSecret` / `ctx.upstreamFetch`
+5. `X-Session-Secrets` header overrides vault values
 
-AES-256-GCM at rest. `VAULT_MASTER_KEY`. API never returns plaintext.
+```bash
+# core
+CONTROL_URL=http://control-plane:3001
+INTERNAL_TOKEN=same-as-control-plane
+VAULT_SESSION_INJECT=true
+GATEWAY_TOKEN_MAP={"my-token":"user-uuid"}
+```
 
 ## Git install
 
