@@ -8,12 +8,14 @@ import {
   createSessionSecrets,
   type SecretMap,
 } from "./session-secrets.js";
+import { logger } from "./logger.js";
 
 export interface SessionInitOptions {
   plugins: string[];
   configs?: Record<string, Record<string, unknown>>;
   subject?: string;
   secrets?: Record<string, string>;
+  explicitScope?: string[] | null;
 }
 
 export class McpSession {
@@ -28,12 +30,14 @@ export class McpSession {
   private inprocessManager: PluginManager | null = null;
   private remoteManager: RemotePluginManager | null = null;
   private secrets: SecretMap = createSessionSecrets();
+  private activePluginIds: string[] = [];
+  private explicitScope: string[] | null = null;
 
   constructor(sessionId: string) {
     this.id = sessionId;
     this.createdAt = Date.now();
     this.server = new Server(
-      { name: "mcp-sse-core", version: "0.7.0" },
+      { name: "mcp-sse-core", version: "0.8.0" },
       { capabilities: { tools: {} } }
     );
   }
@@ -44,6 +48,14 @@ export class McpSession {
 
   get isInitialized(): boolean {
     return this._isInitialized;
+  }
+
+  get pluginIds(): string[] {
+    return [...this.activePluginIds];
+  }
+
+  get scopeFilter(): string[] | null {
+    return this.explicitScope ? [...this.explicitScope] : null;
   }
 
   async initialize(
@@ -62,6 +74,9 @@ export class McpSession {
     this._transport = transport;
     this.subject = opts.subject;
     this.secrets = createSessionSecrets(opts.secrets);
+    this.activePluginIds = [...opts.plugins];
+    this.explicitScope =
+      opts.explicitScope === undefined ? null : opts.explicitScope;
     const mode = getPluginRuntimeMode();
 
     if (mode === "container") {
@@ -82,6 +97,65 @@ export class McpSession {
 
     await this.server.connect(transport);
     this._isInitialized = true;
+  }
+
+  async reloadPlugins(
+    pluginIds: string[],
+    configs: Record<string, Record<string, unknown>> = {}
+  ): Promise<{ tools: string[]; notified: boolean }> {
+    if (!this._isInitialized || this._isShuttingDown) {
+      return { tools: [], notified: false };
+    }
+    if (!this.inprocessManager) {
+      return { tools: [], notified: false };
+    }
+
+    this.activePluginIds = [...pluginIds];
+    const result = await this.inprocessManager.reload(pluginIds, configs);
+    await this.inprocessManager.registerToolsToServer(this.server);
+
+    const notified = await this.notifyToolsListChanged();
+    logger.info("session tools reloaded", {
+      sessionId: this.id,
+      subject: this.subject,
+      plugins: pluginIds,
+      tools: result.tools,
+      notified,
+    });
+    return { tools: result.tools, notified };
+  }
+
+  private async notifyToolsListChanged(): Promise<boolean> {
+    try {
+      const server = this.server as unknown as {
+        notification?: (n: {
+          method: string;
+          params?: Record<string, unknown>;
+        }) => Promise<void>;
+        sendNotification?: (n: {
+          method: string;
+          params?: Record<string, unknown>;
+        }) => Promise<void>;
+      };
+      if (typeof server.notification === "function") {
+        await server.notification({
+          method: "notifications/tools/list_changed",
+        });
+        return true;
+      }
+      if (typeof server.sendNotification === "function") {
+        await server.sendNotification({
+          method: "notifications/tools/list_changed",
+        });
+        return true;
+      }
+    } catch (err) {
+      logger.warn("tools/list_changed notification failed", {
+        sessionId: this.id,
+        error: String(err),
+      });
+    }
+    return false;
   }
 
   async shutdown(): Promise<void> {

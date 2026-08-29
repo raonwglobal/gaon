@@ -1,15 +1,25 @@
 import type { McpSession } from "./session.js";
-import { getPlatformConfig } from "./runtime-state.js";
+import {
+  getPlatformConfig,
+  runtimeState,
+  resolveSessionPlugins,
+} from "./runtime-state.js";
 import { metrics } from "./metrics.js";
+import { logger } from "./logger.js";
 
 export interface SessionListItem {
   id: string;
   createdAt: number;
   lastActivity: number;
+  subject?: string;
+  plugins?: string[];
 }
 
 export class SessionManager {
-  private sessions = new Map<string, { session: McpSession; lastActivity: number }>();
+  private sessions = new Map<
+    string,
+    { session: McpSession; lastActivity: number }
+  >();
   private readonly idleTimeoutMs: number;
   private readonly maxSessionsFallback: number;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -60,11 +70,63 @@ export class SessionManager {
       id,
       createdAt: e.session.createdAt,
       lastActivity: e.lastActivity,
+      subject: e.session.subject,
+      plugins: e.session.pluginIds,
     }));
   }
 
+  async reloadAllSessionTools(): Promise<{
+    sessions: number;
+    updated: number;
+    failed: number;
+    details: { sessionId: string; tools: string[]; error?: string }[];
+  }> {
+    const details: {
+      sessionId: string;
+      tools: string[];
+      error?: string;
+    }[] = [];
+    let updated = 0;
+    let failed = 0;
+
+    for (const { session } of this.sessions.values()) {
+      if (!session.isInitialized) continue;
+      try {
+        const next = resolveSessionPlugins(
+          session.scopeFilter,
+          session.subject
+        );
+        const result = await session.reloadPlugins(
+          next,
+          runtimeState.pluginConfigs
+        );
+        updated += 1;
+        details.push({ sessionId: session.id, tools: result.tools });
+      } catch (err) {
+        failed += 1;
+        details.push({
+          sessionId: session.id,
+          tools: [],
+          error: err instanceof Error ? err.message : String(err),
+        });
+        logger.error("session tool reload failed", {
+          sessionId: session.id,
+          error: String(err),
+        });
+      }
+    }
+
+    return {
+      sessions: this.sessions.size,
+      updated,
+      failed,
+      details,
+    };
+  }
+
   private async cleanupIdle(): Promise<void> {
-    const timeout = getPlatformConfig().sessionIdleTimeoutMs || this.idleTimeoutMs;
+    const timeout =
+      getPlatformConfig().sessionIdleTimeoutMs || this.idleTimeoutMs;
     const now = Date.now();
     for (const [id, entry] of this.sessions) {
       if (now - entry.lastActivity > timeout) {
