@@ -137,4 +137,17 @@ export const vault = {
     persist();
     return true;
   },
+
+  listPlainByUser(userId: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const s of secrets.values()) {
+      if (s.userId !== userId) continue;
+      try {
+        out[s.name] = decrypt(s.ciphertext);
+      } catch {
+        /* skip corrupt */
+      }
+    }
+    return out;
+  },
 };
