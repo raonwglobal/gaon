@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { store } from "../store.js";
+import { store, maskConfig } from "../store.js";
 import { syncConfigToCore } from "../core-sync.js";
+import type { AuthContext } from "../auth/session.js";
+import { requireRole } from "../auth/session.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -13,35 +15,36 @@ async function readBody(req: IncomingMessage): Promise<string> {
 export async function handleConfig(
   req: IncomingMessage,
   res: ServerResponse,
-  pathname: string
+  pathname: string,
+  auth: AuthContext
 ): Promise<boolean> {
   if (pathname !== "/api/config") return false;
-
   if (req.method === "GET") {
+    const raw = store.getConfig();
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ config: store.getConfig() }));
+    res.end(JSON.stringify({
+      config: auth.role === "admin" ? raw : maskConfig(raw),
+    }));
     return true;
   }
-
   if (req.method === "PUT") {
+    if (!requireRole(auth, ["admin"])) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Forbidden" }));
+      return true;
+    }
     try {
       const body = JSON.parse(await readBody(req));
+      if (body.apiSecretToken === "***") delete body.apiSecretToken;
       const updated = store.setConfig(body);
-      // Single source: push to Core immediately
       const sync = await syncConfigToCore();
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          config: updated,
-          coreSync: sync,
-        })
-      );
+      res.end(JSON.stringify({ config: maskConfig(updated), coreSync: sync }));
     } catch {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Invalid body" }));
     }
     return true;
   }
-
   return false;
 }
