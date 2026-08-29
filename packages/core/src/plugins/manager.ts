@@ -20,10 +20,16 @@ export interface PluginManagerOptions {
   secrets: SecretMap;
 }
 
+/**
+ * Mutable tool index: ListTools/CallTool handlers read live maps so
+ * reload() updates open SSE sessions without reconnect.
+ */
 export class PluginManager {
   private plugins: McpPlugin[] = [];
   private toolOwner = new Map<string, McpPlugin>();
+  private tools: PluginToolDefinition[] = [];
   private opts: PluginManagerOptions;
+  private handlersRegistered = false;
 
   constructor(opts: PluginManagerOptions) {
     this.opts = opts;
@@ -43,22 +49,21 @@ export class PluginManager {
         logger.error("plugin load failed", { id, error: String(err) });
       }
     }
+    await this.rebuildToolIndex();
   }
 
-  async registerToolsToServer(server: Server): Promise<void> {
-    const aggregated: PluginToolDefinition[] = [];
+  async rebuildToolIndex(): Promise<void> {
+    this.toolOwner.clear();
+    this.tools = [];
 
     for (const plugin of this.plugins) {
-      if (plugin.registerTools) {
-        await plugin.registerTools(server);
-      }
       if (!plugin.listTools) continue;
-      const tools = await plugin.listTools();
-      for (const tool of tools) {
+      const listed = await plugin.listTools();
+      for (const tool of listed) {
         const qualified = tool.name.startsWith(`${plugin.manifest.id}_`)
           ? tool.name
           : `${plugin.manifest.id}_${tool.name}`;
-        aggregated.push({
+        this.tools.push({
           name: qualified,
           description: tool.description,
           inputSchema: tool.inputSchema,
@@ -66,19 +71,39 @@ export class PluginManager {
         this.toolOwner.set(qualified, plugin);
       }
     }
+  }
+
+  async reload(
+    ids: string[],
+    configs: Record<string, Record<string, unknown>> = {}
+  ): Promise<{ tools: string[] }> {
+    await this.shutdownAll();
+    await this.loadPlugins(ids, configs);
+    return { tools: this.getToolNames() };
+  }
+
+  async registerToolsToServer(server: Server): Promise<void> {
+    for (const plugin of this.plugins) {
+      if (plugin.registerTools) {
+        await plugin.registerTools(server);
+      }
+    }
+
+    if (this.handlersRegistered) return;
+
+    const self = this;
+    const secrets = this.opts.secrets;
+    const sessionId = this.opts.sessionId;
+    const subject = this.opts.subject;
+    const upstreamFetch = createUpstreamFetch(secrets);
 
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: aggregated.map((t) => ({
+      tools: self.tools.map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.inputSchema,
       })),
     }));
-
-    const secrets = this.opts.secrets;
-    const sessionId = this.opts.sessionId;
-    const subject = this.opts.subject;
-    const upstreamFetch = createUpstreamFetch(secrets);
 
     server.setRequestHandler(
       CallToolRequestSchema,
@@ -90,7 +115,7 @@ export class PluginManager {
           string,
           unknown
         >;
-        const owner = this.toolOwner.get(name);
+        const owner = self.toolOwner.get(name);
 
         if (!owner?.callTool) {
           metrics.recordToolCall(name, true);
@@ -133,10 +158,12 @@ export class PluginManager {
         }
       }) as never
     );
+
+    this.handlersRegistered = true;
   }
 
   getToolNames(): string[] {
-    return [...this.toolOwner.keys()];
+    return this.tools.map((t) => t.name);
   }
 
   async shutdownAll(): Promise<void> {
@@ -149,5 +176,6 @@ export class PluginManager {
     }
     this.plugins = [];
     this.toolOwner.clear();
+    this.tools = [];
   }
 }
