@@ -1,32 +1,33 @@
-# Plugin hot rediscovery (no Core process restart)
+# Plugin hot rediscovery + live session tool swap
 
-## Problem
+## Factory rediscovery (process stays up)
 
-Previously, installing a plugin required restarting Core so `ensurePluginDiscovery()` would run again (`discoveryDone` stayed true).
+1. `reloadPluginDiscovery()` re-scans `PLUGINS_DIR`
+2. ESM import uses `?v=generation` cache-bust
+3. Triggered by Control sync / install / enable
 
-## Solution
+## Live session tool handler swap
 
-1. **`reloadPluginDiscovery()`** — re-scans `PLUGINS_DIR`, rebuilds `PLUGIN_FACTORIES`
-2. **ESM cache-bust** — dynamic `import(fileUrl + '?v=' + generation)` so updated code on disk is loaded
-3. **Auto trigger** — `PUT /internal/plugins` (Control sync) calls rediscovery
-4. **Manual** — `POST /internal/plugins/reload` with `X-Internal-Token`
-5. **Control Plane** — install / enable / disable / delete auto-call `syncPluginsToCore()`
+Open SSE sessions update **without reconnect**:
 
-## Session semantics
+1. `PluginManager.reload(ids)` — shutdown old plugins, load new, rebuild **mutable** tool maps
+2. `ListTools` / `CallTool` handlers close over those maps → next request sees new tools
+3. `notifications/tools/list_changed` when SDK supports it
+4. `SessionManager.reloadAllSessionTools()` after every rediscovery
 
-| Session | Behavior |
-|---------|----------|
-| **New** SSE connections | Load current enabled plugins + latest factories |
-| **Existing** SSE sessions | Keep the tool set from connect time (stable mid-conversation) |
+### Scope on reload
 
-Reconnect MCP client after install/enable to see new tools.
+- Uses `resolveSessionPlugins(session.scopeFilter, subject)`
+- `X-Enabled-Plugins` from connect is stored as `explicitScope` and kept on reload
 
-## Verify
+### Container runtime
+
+Live swap is for **inprocess** mode. Container mode uses the runtime catalog.
+
+### Verify
 
 ```bash
-curl -H "X-Internal-Token: $INTERNAL_TOKEN" http://localhost:3000/health
-# discoveryEpoch increments after install/sync
-
 curl -X POST -H "X-Internal-Token: $INTERNAL_TOKEN" \
   http://localhost:3000/internal/plugins/reload
+# liveSessions.updated / details[].tools
 ```

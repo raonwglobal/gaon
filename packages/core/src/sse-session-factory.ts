@@ -44,9 +44,7 @@ export async function initializeScopedSession(
     ? await fetchVaultSecretsForUser(userId)
     : {};
 
-  // Header secrets override vault (explicit session wins)
   const secrets = { ...vaultSecrets, ...headerSecrets };
-
   const effectiveSubject = userId || subject;
   const sessionPlugins = resolveSessionPlugins(scope, effectiveSubject);
 
@@ -65,6 +63,7 @@ export async function initializeScopedSession(
     configs: runtimeState.pluginConfigs,
     subject: effectiveSubject,
     secrets,
+    explicitScope: scope,
   });
 
   return sessionPlugins;
