@@ -1,3 +1,6 @@
+# gaon MCP SSE Platform — full stack
+# Features: gateway auth, vault session inject, install-worker,
+# plugin hot rediscovery (shared ./plugins), RBAC dashboard, HMAC signatures.
 services:
   core:
     build:
@@ -8,10 +11,11 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - ENABLED_PLUGINS=weather,echo
-      - ALLOWED_ORIGINS=*
-      - RATE_LIMIT_PER_MIN=120
-      - MAX_SESSIONS=500
+      - ENABLED_PLUGINS=${ENABLED_PLUGINS:-weather,echo}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - RATE_LIMIT_PER_MIN=${RATE_LIMIT_PER_MIN:-120}
+      - MAX_SESSIONS=${MAX_SESSIONS:-500}
+      - SESSION_IDLE_TIMEOUT_MS=${SESSION_IDLE_TIMEOUT_MS:-1800000}
       - PLUGINS_DIR=/app/plugins
       - PLUGIN_RUNTIME=${PLUGIN_RUNTIME:-inprocess}
       - ORCHESTRATOR=${ORCHESTRATOR:-endpoint}
@@ -19,6 +23,7 @@ services:
       - API_SECRET_TOKEN=${API_SECRET_TOKEN:-}
       - GATEWAY_REQUIRE_AUTH=${GATEWAY_REQUIRE_AUTH:-false}
       - GATEWAY_TOKENS=${GATEWAY_TOKENS:-}
+      - GATEWAY_TOKEN_MAP=${GATEWAY_TOKEN_MAP:-}
       - CONTROL_URL=http://control-plane:3001
       - VAULT_SESSION_INJECT=${VAULT_SESSION_INJECT:-true}
     volumes:
@@ -37,7 +42,7 @@ services:
       - "8080:8080"
     environment:
       - PORT=8080
-      - PLUGIN_ID=echo
+      - PLUGIN_ID=${PLUGIN_RUNTIME_ID:-echo}
     restart: unless-stopped
 
   control-plane:
@@ -56,12 +61,15 @@ services:
       - CORE_URL=http://core:3000
       - DATABASE_PATH=/data/platform.json
       - USERS_PATH=/data/users.json
+      - VAULT_PATH=/data/vault.json
+      - AUDIT_LOG_PATH=/data/audit.log
       - PLUGINS_DIR=/plugins
       - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-*}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - VAULT_MASTER_KEY=${VAULT_MASTER_KEY:-}
       - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
       - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
+      - GIT_ALLOW_HTTP=${GIT_ALLOW_HTTP:-false}
       - INSTALL_WORKER_URL=${INSTALL_WORKER_URL:-http://install-worker:3002}
       - PLUGIN_SIGNING_KEY=${PLUGIN_SIGNING_KEY:-}
       - PLUGIN_SIGNATURE_REQUIRED=${PLUGIN_SIGNATURE_REQUIRED:-false}
@@ -83,6 +91,7 @@ services:
       - PLUGINS_DIR=/plugins
       - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
       - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
+      - GIT_ALLOW_HTTP=${GIT_ALLOW_HTTP:-false}
       - PLUGIN_SIGNING_KEY=${PLUGIN_SIGNING_KEY:-}
       - PLUGIN_SIGNATURE_REQUIRED=${PLUGIN_SIGNATURE_REQUIRED:-false}
     volumes:
