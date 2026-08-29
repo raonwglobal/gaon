@@ -14,15 +14,19 @@ function headers(): Record<string, string> {
 export async function syncPluginsToCore(): Promise<{ ok: boolean; detail?: string }> {
   const enabled = registry.enabledIds();
   const configs: Record<string, Record<string, unknown>> = {};
+  const owners: Record<string, string> = {};
   for (const p of registry.list()) {
-    if (p.enabled) configs[p.id] = p.config;
+    if (p.enabled) {
+      configs[p.id] = p.config;
+      if (p.ownerUserId) owners[p.id] = p.ownerUserId;
+    }
   }
 
   try {
     const res = await fetch(`${CORE_URL}/internal/plugins`, {
       method: "PUT",
       headers: headers(),
-      body: JSON.stringify({ enabled, configs }),
+      body: JSON.stringify({ enabled, configs, owners }),
     });
     if (!res.ok) return { ok: false, detail: await res.text() };
     return { ok: true };
@@ -31,7 +35,6 @@ export async function syncPluginsToCore(): Promise<{ ok: boolean; detail?: strin
   }
 }
 
-/** Push platform config so Core CORS / rate-limit / maxSessions stay in sync. */
 export async function syncConfigToCore(): Promise<{ ok: boolean; detail?: string }> {
   const config = store.getConfig();
   try {
