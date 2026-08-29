@@ -21,7 +21,11 @@ import {
   setPlatformConfig,
   getPlatformConfig,
 } from "./runtime-state.js";
-import { listBuiltinPluginIds } from "./plugins/index.js";
+import {
+  listBuiltinPluginIds,
+  reloadPluginDiscovery,
+  getDiscoveryEpoch,
+} from "./plugins/index.js";
 import { metrics } from "./metrics.js";
 import { logger } from "./logger.js";
 import {
@@ -121,6 +125,7 @@ export function createMcpSseServer(config: ServerConfig) {
             peers: listPeers(),
             pluginRuntime: getPluginRuntimeMode(),
             catalogEpoch: runtimeCatalog.getEpoch(),
+            discoveryEpoch: getDiscoveryEpoch(),
           })
         );
         return;
@@ -152,6 +157,7 @@ export function createMcpSseServer(config: ServerConfig) {
             configs: runtimeState.pluginConfigs,
             owners: runtimeState.pluginOwners,
             builtins: listBuiltinPluginIds(),
+            discoveryEpoch: getDiscoveryEpoch(),
             mode: getPluginRuntimeMode(),
             catalog: runtimeCatalog.list(),
           })
@@ -176,16 +182,21 @@ export function createMcpSseServer(config: ServerConfig) {
           if (body.owners && typeof body.owners === "object") {
             setPluginOwners(body.owners);
           }
+          const rediscovered = await reloadPluginDiscovery();
           logger.info("plugins synced", {
             enabled: runtimeState.enabledPlugins,
             owners: Object.keys(runtimeState.pluginOwners).length,
+            discoveryEpoch: rediscovered.epoch,
+            factories: rediscovered.ids,
           });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
               ok: true,
               enabled: runtimeState.enabledPlugins,
-              note: "inprocess: new sessions; container: catalog is source of tools",
+              discoveryEpoch: rediscovered.epoch,
+              factories: rediscovered.ids,
+              note: "factories reloaded; new SSE sessions pick up enabled plugins",
             })
           );
         } catch {
@@ -193,6 +204,20 @@ export function createMcpSseServer(config: ServerConfig) {
           res.writeHead(400, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Invalid body" }));
         }
+        return;
+      }
+
+      if (req.method === "POST" && path === "/internal/plugins/reload") {
+        metrics.recordHttp(path);
+        const rediscovered = await reloadPluginDiscovery();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            discoveryEpoch: rediscovered.epoch,
+            factories: rediscovered.ids,
+          })
+        );
         return;
       }
 
@@ -370,6 +395,7 @@ export function createMcpSseServer(config: ServerConfig) {
           plugins: runtimeState.enabledPlugins,
           pluginRuntime: getPluginRuntimeMode(),
           catalogEpoch: runtimeCatalog.getEpoch(),
+          discoveryEpoch: getDiscoveryEpoch(),
           catalogPlugins: runtimeCatalog.readyPlugins().map((p) => p.id),
           sandbox: process.env.SANDBOX_PLUGINS === "true",
           metrics: metrics.snapshot(sessionManager.size),
