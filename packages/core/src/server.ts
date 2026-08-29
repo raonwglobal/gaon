@@ -5,12 +5,18 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { McpSession } from "./session.js";
 import { SessionManager } from "./session-manager.js";
 import { applyCors } from "./security/cors.js";
-import { authenticate } from "./security/auth.js";
+import { authenticateGateway } from "./security/auth.js";
+import {
+  parsePluginScopeHeader,
+  parseSessionSecretsHeader,
+} from "./session-secrets.js";
 import { rateLimit } from "./security/rate-limit.js";
 import type { ServerConfig } from "./config.js";
 import {
   runtimeState,
   setEnabledPlugins,
+  setPluginOwners,
+  resolveSessionPlugins,
   setPluginConfig,
   setPlatformConfig,
   getPlatformConfig,
@@ -27,6 +33,7 @@ import {
 import { handleCatalogRoutes } from "./server-catalog-routes.js";
 import { getPluginRuntimeMode } from "./runtime/mode.js";
 import { runtimeCatalog } from "./runtime/catalog.js";
+import { initializeScopedSession } from "./sse-session-factory.js";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -143,6 +150,7 @@ export function createMcpSseServer(config: ServerConfig) {
           JSON.stringify({
             enabled: runtimeState.enabledPlugins,
             configs: runtimeState.pluginConfigs,
+            owners: runtimeState.pluginOwners,
             builtins: listBuiltinPluginIds(),
             mode: getPluginRuntimeMode(),
             catalog: runtimeCatalog.list(),
@@ -157,6 +165,7 @@ export function createMcpSseServer(config: ServerConfig) {
           const body = JSON.parse(await readBody(req)) as {
             enabled?: string[];
             configs?: Record<string, Record<string, unknown>>;
+            owners?: Record<string, string>;
           };
           if (Array.isArray(body.enabled)) setEnabledPlugins(body.enabled);
           if (body.configs) {
@@ -164,7 +173,13 @@ export function createMcpSseServer(config: ServerConfig) {
               setPluginConfig(id, cfg);
             }
           }
-          logger.info("plugins synced", { enabled: runtimeState.enabledPlugins });
+          if (body.owners && typeof body.owners === "object") {
+            setPluginOwners(body.owners);
+          }
+          logger.info("plugins synced", {
+            enabled: runtimeState.enabledPlugins,
+            owners: Object.keys(runtimeState.pluginOwners).length,
+          });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
@@ -228,10 +243,13 @@ export function createMcpSseServer(config: ServerConfig) {
       return;
     }
 
-    if (!authenticate(req)) {
+    const gatewayAuth = authenticateGateway(req);
+    if (!gatewayAuth.ok) {
       metrics.recordHttp(path, true);
       res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
+      res.end(
+        JSON.stringify({ error: "Unauthorized", reason: gatewayAuth.reason })
+      );
       return;
     }
 
@@ -267,18 +285,19 @@ export function createMcpSseServer(config: ServerConfig) {
       const transport = new SSEServerTransport("/message", res);
       const session = new McpSession(sessionId);
       sessionManager.add(session);
-      logger.info("session created", {
-        sessionId,
-        mode: getPluginRuntimeMode(),
-        plugins: runtimeState.enabledPlugins,
-      });
 
       try {
-        await session.initialize(
+        const sessionPlugins = await initializeScopedSession(
+          session,
           transport,
-          [...runtimeState.enabledPlugins],
-          runtimeState.pluginConfigs
+          req,
+          gatewayAuth.subject
         );
+        logger.info("session created", {
+          sessionId,
+          subject: gatewayAuth.subject,
+          plugins: sessionPlugins,
+        });
         res.on("close", () => {
           logger.info("session closed", { sessionId });
           void sessionManager.remove(sessionId);
