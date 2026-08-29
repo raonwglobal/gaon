@@ -62,8 +62,30 @@ services:
       - VAULT_MASTER_KEY=${VAULT_MASTER_KEY:-}
       - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
       - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
+      - INSTALL_WORKER_URL=${INSTALL_WORKER_URL:-http://install-worker:3002}
+      - PLUGIN_SIGNING_KEY=${PLUGIN_SIGNING_KEY:-}
+      - PLUGIN_SIGNATURE_REQUIRED=${PLUGIN_SIGNATURE_REQUIRED:-false}
     volumes:
       - control-data:/data
+      - ./plugins:/plugins
+    depends_on:
+      - install-worker
+    restart: unless-stopped
+
+  install-worker:
+    build:
+      context: packages/install-worker
+      dockerfile: Dockerfile
+    image: gaon/install-worker:local
+    environment:
+      - INSTALL_WORKER_PORT=3002
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
+      - PLUGINS_DIR=/plugins
+      - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
+      - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
+      - PLUGIN_SIGNING_KEY=${PLUGIN_SIGNING_KEY:-}
+      - PLUGIN_SIGNATURE_REQUIRED=${PLUGIN_SIGNATURE_REQUIRED:-false}
+    volumes:
       - ./plugins:/plugins
     restart: unless-stopped
 
