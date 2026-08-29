@@ -35,6 +35,9 @@ jobs:
           - image: plugin-runtime
             context: packages/plugin-runtime
             file: packages/plugin-runtime/Dockerfile
+          - image: install-worker
+            context: packages/install-worker
+            file: packages/install-worker/Dockerfile
 
     steps:
       - name: Checkout
@@ -89,6 +92,6 @@ jobs:
           echo "| Image | Reference |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-----------|" >> "$GITHUB_STEP_SUMMARY"
           REPO="${{ env.REGISTRY }}/${{ github.repository }}"
-          for img in core control-plane dashboard plugin-runtime; do
+          for img in core control-plane dashboard plugin-runtime install-worker; do
             echo "| \`$img\` | \`$REPO/$img:latest\` |" >> "$GITHUB_STEP_SUMMARY"
           done
