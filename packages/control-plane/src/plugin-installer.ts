@@ -1,5 +1,6 @@
 /**
  * Install plugins from git or npm into PLUGINS_DIR.
+ * Prefer install-worker when INSTALL_WORKER_URL is set.
  */
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -13,6 +14,7 @@ import {
   readFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
+import { installViaWorker } from "./install-worker-client.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,9 +27,7 @@ export interface InstallRequest {
   id: string;
   source: {
     type: "git" | "npm";
-    /** git URL or npm package name */
     ref: string;
-    /** optional git branch/tag or npm version */
     version?: string;
   };
 }
@@ -36,6 +36,7 @@ export interface InstallResult {
   ok: boolean;
   path?: string;
   detail?: string;
+  signatureOk?: boolean;
 }
 
 function formatExecError(err: unknown, cmd: string): string {
@@ -86,7 +87,12 @@ function assertWritable(dir: string): void {
   }
 }
 
-export async function installPlugin(req: InstallRequest): Promise<InstallResult> {
+export async function installPlugin(
+  req: InstallRequest
+): Promise<InstallResult> {
+  const remote = await installViaWorker(req);
+  if (remote) return remote;
+
   const id = req.id.trim();
   if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
     return {
@@ -99,7 +105,10 @@ export async function installPlugin(req: InstallRequest): Promise<InstallResult>
   try {
     assertWritable(root);
   } catch (err) {
-    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    };
   }
 
   const target = join(root, id);
@@ -122,7 +131,7 @@ export async function installPlugin(req: InstallRequest): Promise<InstallResult>
         return {
           ok: false,
           detail:
-            "git is not installed in the control-plane image. Rebuild the control-plane image (apk add git).",
+            "git is not installed. Set INSTALL_WORKER_URL or rebuild control-plane with git.",
         };
       }
 
@@ -138,7 +147,8 @@ export async function installPlugin(req: InstallRequest): Promise<InstallResult>
     } else if (req.source.type === "npm") {
       mkdirSync(target, { recursive: true });
       const depName = req.source.ref.trim();
-      if (!depName) return { ok: false, detail: "source.ref (npm package) is required" };
+      if (!depName)
+        return { ok: false, detail: "source.ref (npm package) is required" };
 
       writeFileSync(
         join(target, "package.json"),
@@ -154,7 +164,11 @@ export async function installPlugin(req: InstallRequest): Promise<InstallResult>
           2
         )
       );
-      await run("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], target);
+      await run(
+        "npm",
+        ["install", "--omit=dev", "--no-audit", "--no-fund"],
+        target
+      );
       writeFileSync(
         join(target, "index.js"),
         `export { default } from ${JSON.stringify(depName)};\n` +
@@ -167,7 +181,10 @@ export async function installPlugin(req: InstallRequest): Promise<InstallResult>
     const pkgPath = join(target, "package.json");
     if (existsSync(pkgPath)) {
       try {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<string, unknown>;
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as Record<
+          string,
+          unknown
+        >;
         if (!pkg.mcpPluginId) {
           pkg.mcpPluginId = id;
           writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
@@ -184,6 +201,9 @@ export async function installPlugin(req: InstallRequest): Promise<InstallResult>
     } catch {
       /* ignore */
     }
-    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      detail: err instanceof Error ? err.message : String(err),
+    };
   }
 }
