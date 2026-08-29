@@ -6,14 +6,11 @@ import type {
   ToolCallResult,
 } from "../../packages/core/src/plugins/interface.js";
 
-/**
- * Example Weather plugin using the aggregated listTools/callTool API.
- */
 export class WeatherPlugin implements McpPlugin {
   readonly manifest: McpPluginManifest = {
     id: "weather",
     name: "Weather Plugin",
-    version: "1.0.1",
+    version: "1.0.2",
     description: "Simple weather lookup example plugin",
     author: "mcp-sse-platform",
   };
@@ -57,12 +54,18 @@ export class WeatherPlugin implements McpPlugin {
         ? ctx.arguments.city.trim()
         : this.defaultCity;
 
-    // Demo payload — replace with a real weather API in production
+    // Optional real upstream:
+    // const res = await ctx.upstreamFetch("https://api.example.com/weather?q=" + city, {
+    //   secretName: "WEATHER_API_KEY",
+    // });
+    const hasKey = Boolean(ctx.getSecret("WEATHER_API_KEY"));
+
     const payload = {
       city,
       tempC: 22,
       condition: "Partly cloudy",
-      source: "mock",
+      source: hasKey ? "mock-with-session-secret" : "mock",
+      sessionId: ctx.sessionId,
       ts: new Date().toISOString(),
     };
 
