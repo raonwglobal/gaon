@@ -16,6 +16,9 @@ services:
       - PLUGIN_RUNTIME=${PLUGIN_RUNTIME:-inprocess}
       - ORCHESTRATOR=${ORCHESTRATOR:-endpoint}
       - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
+      - API_SECRET_TOKEN=${API_SECRET_TOKEN:-}
+      - GATEWAY_REQUIRE_AUTH=${GATEWAY_REQUIRE_AUTH:-false}
+      - GATEWAY_TOKENS=${GATEWAY_TOKENS:-}
     volumes:
       - ./plugins:/app/plugins:ro
     depends_on:
@@ -53,6 +56,9 @@ services:
       - PLUGINS_DIR=/plugins
       - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-*}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY:-}
+      - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
+      - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
     volumes:
       - control-data:/data
       - ./plugins:/plugins

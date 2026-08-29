@@ -38,7 +38,7 @@
 2. `/config.json`에 관리 시크릿 주입 금지
 3. 세션 쿠키(HttpOnly) 우선, 공유 ADMIN 토큰은 부트스트랩/호환용만
 4. 익명은 대시보드·Control로 플러그인 상태 검색 불가
-5. Gateway MCP 클라이언트 인증·스코프는 데이터 평면에서 강화 (단계적)
+5. Gateway MCP 클라이언트 인증·스코프는 데이터 평면에서 강화
 
 ## 5. 배포 프로파일
 
@@ -47,6 +47,7 @@
 
 ## 6. 로드맵 정렬
 
-- P0: 로그인·세션·RBAC·플러그인 owner · config.json 시크릿 제거 (본 고도화)
-- P1: Vault, upstream 주입, Gateway 테넌트 스코프 tools/list
-- P2: install-worker 분리, Git allowlist, audit UI
+- P0: 로그인·세션·RBAC·플러그인 owner · config.json 시크릿 제거 ✅
+- P1: Vault(AES-GCM), Gateway 클라이언트 인증 강화, Git allowlist, audit log ✅
+- P1b: Gateway 테넌트 스코프 tools/list, upstreamFetch 주입 (다음)
+- P2: install-worker 분리, 서명 릴리스
