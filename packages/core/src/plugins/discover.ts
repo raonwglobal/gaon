@@ -8,17 +8,10 @@ export interface DiscoveredPlugin {
   path: string;
 }
 
-/**
- * Discover plugin directories under PLUGINS_DIR.
- * Skips folders starting with `_` (templates).
- * Expects each plugin to export a default class or named *Plugin class.
- */
 export function resolvePluginsDir(): string {
   if (process.env.PLUGINS_DIR) {
     return resolve(process.env.PLUGINS_DIR);
   }
-  // monorepo: packages/core -> ../../plugins
-  // docker: /app/plugins
   const candidates = [
     resolve(process.cwd(), "plugins"),
     resolve(process.cwd(), "../plugins"),
@@ -75,8 +68,13 @@ export function listPluginDirs(pluginsDir: string): DiscoveredPlugin[] {
   return found;
 }
 
+/**
+ * Build factories. `generation` is stamped onto import URLs so Node ESM
+ * cache does not reuse stale modules after a hot rediscovery.
+ */
 export async function buildDiscoveredFactories(
-  pluginsDir?: string
+  pluginsDir?: string,
+  generation: number = Date.now()
 ): Promise<Record<string, McpPluginFactory>> {
   const dir = pluginsDir ?? resolvePluginsDir();
   const discovered = listPluginDirs(dir);
@@ -84,16 +82,24 @@ export async function buildDiscoveredFactories(
 
   for (const item of discovered) {
     const fileUrl = pathToFileURL(item.path).href;
+    const gen = generation;
     factories[item.id] = async () => {
-      const mod = (await import(fileUrl)) as Record<string, unknown>;
+      const mod = (await import(`${fileUrl}?v=${gen}`)) as Record<
+        string,
+        unknown
+      >;
       const Candidate =
         (mod.default as new () => unknown) ||
         (Object.values(mod).find(
-          (v) => typeof v === "function" && /Plugin$/.test((v as { name?: string }).name || "")
+          (v) =>
+            typeof v === "function" &&
+            /Plugin$/.test((v as { name?: string }).name || "")
         ) as new () => unknown | undefined);
 
       if (!Candidate) {
-        throw new Error(`Plugin ${item.id} has no exportable class at ${item.path}`);
+        throw new Error(
+          `Plugin ${item.id} has no exportable class at ${item.path}`
+        );
       }
       return new Candidate() as Awaited<ReturnType<McpPluginFactory>>;
     };
