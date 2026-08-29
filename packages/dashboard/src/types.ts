@@ -6,6 +6,7 @@ export interface PluginRecord {
   enabled: boolean;
   config: Record<string, unknown>;
   source: { type: string; path?: string; ref?: string; [key: string]: unknown };
+  ownerUserId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -30,12 +31,9 @@ export interface MetricsPayload {
     uptime?: number;
     plugins?: string[];
   };
-  plugins?: {
-    total?: number;
-    enabled?: number;
-  };
+  plugins?: { total?: number; enabled?: number };
   uptime?: number;
   observability?: Record<string, unknown>;
 }
 
-export type Tab = "plugins" | "sessions" | "metrics" | "logs" | "settings";
+export type Tab = "plugins" | "users" | "sessions" | "metrics" | "logs" | "settings";
