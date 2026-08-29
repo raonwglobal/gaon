@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { registry } from "../registry.js";
 import { installPlugin } from "../plugin-installer.js";
+import { syncPluginsToCore } from "../core-sync.js";
 import type { AuthContext } from "../auth/session.js";
 import { canAccessPlugin, requireRole } from "../auth/session.js";
 
@@ -28,7 +29,10 @@ export async function handlePlugins(
   auth: AuthContext
 ): Promise<boolean> {
   if (req.method === "POST" && pathname === "/api/plugins/install") {
-    if (!requireRole(auth, ["user"])) { forbid(res); return true; }
+    if (!requireRole(auth, ["user"])) {
+      forbid(res);
+      return true;
+    }
     try {
       const body = JSON.parse(await readBody(req)) as {
         id: string;
@@ -46,7 +50,9 @@ export async function handlePlugins(
       const result = await installPlugin({ id: body.id, source: body.source });
       if (!result.ok) {
         res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Install failed", detail: result.detail }));
+        res.end(
+          JSON.stringify({ error: "Install failed", detail: result.detail })
+        );
         return true;
       }
       const record = registry.register({
@@ -63,32 +69,45 @@ export async function handlePlugins(
         enabled: body.enabled ?? true,
         ownerUserId: auth.user.id,
       });
+      const sync = await syncPluginsToCore();
       res.writeHead(201, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        plugin: record,
-        install: result,
-        note: "Restart Core to load the new plugin factory",
-      }));
+      res.end(
+        JSON.stringify({
+          plugin: record,
+          install: result,
+          sync,
+          note: sync.ok
+            ? "Plugin installed; Core rediscovered factories (new SSE sessions apply)"
+            : "Installed but Core sync failed — call POST /api/sync",
+        })
+      );
     } catch (err) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        error: "Invalid body or install error",
-        detail: err instanceof Error ? err.message : String(err),
-      }));
+      res.end(
+        JSON.stringify({
+          error: "Invalid body or install error",
+          detail: err instanceof Error ? err.message : String(err),
+        })
+      );
     }
     return true;
   }
 
   if (req.method === "GET" && pathname === "/api/plugins") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      plugins: registry.listForUser(auth.user.id, isAdminLike(auth)),
-    }));
+    res.end(
+      JSON.stringify({
+        plugins: registry.listForUser(auth.user.id, isAdminLike(auth)),
+      })
+    );
     return true;
   }
 
   if (req.method === "POST" && pathname === "/api/plugins") {
-    if (!requireRole(auth, ["user"])) { forbid(res); return true; }
+    if (!requireRole(auth, ["user"])) {
+      forbid(res);
+      return true;
+    }
     try {
       const body = JSON.parse(await readBody(req));
       const record = registry.register({
@@ -100,8 +119,9 @@ export async function handlePlugins(
         config: body.config,
         ownerUserId: auth.user.id,
       });
+      const sync = await syncPluginsToCore();
       res.writeHead(201, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ plugin: record }));
+      res.end(JSON.stringify({ plugin: record, sync }));
     } catch {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Invalid body" }));
@@ -109,7 +129,9 @@ export async function handlePlugins(
     return true;
   }
 
-  const match = pathname.match(/^\/api\/plugins\/([^/]+)(\/(enable|disable))?$/);
+  const match = pathname.match(
+    /^\/api\/plugins\/([^/]+)(\/(enable|disable))?$/
+  );
   if (match) {
     const id = decodeURIComponent(match[1]);
     const action = match[3];
@@ -129,19 +151,27 @@ export async function handlePlugins(
       return true;
     }
     if (req.method === "POST" && (action === "enable" || action === "disable")) {
-      if (!requireRole(auth, ["user"])) { forbid(res); return true; }
-      const plugin = action === "enable" ? registry.enable(id) : registry.disable(id);
+      if (!requireRole(auth, ["user"])) {
+        forbid(res);
+        return true;
+      }
+      const plugin =
+        action === "enable" ? registry.enable(id) : registry.disable(id);
       if (!plugin) {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Not found" }));
         return true;
       }
+      const sync = await syncPluginsToCore();
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ plugin }));
+      res.end(JSON.stringify({ plugin, sync }));
       return true;
     }
     if (req.method === "PATCH" && !action) {
-      if (!requireRole(auth, ["user"])) { forbid(res); return true; }
+      if (!requireRole(auth, ["user"])) {
+        forbid(res);
+        return true;
+      }
       try {
         const body = JSON.parse(await readBody(req));
         if (body.config) {
@@ -151,8 +181,9 @@ export async function handlePlugins(
             res.end(JSON.stringify({ error: "Not found" }));
             return true;
           }
+          const sync = await syncPluginsToCore();
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ plugin }));
+          res.end(JSON.stringify({ plugin, sync }));
           return true;
         }
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -164,8 +195,12 @@ export async function handlePlugins(
       return true;
     }
     if (req.method === "DELETE" && !action) {
-      if (!requireRole(auth, ["user"])) { forbid(res); return true; }
+      if (!requireRole(auth, ["user"])) {
+        forbid(res);
+        return true;
+      }
       const ok = registry.uninstall(id);
+      if (ok) await syncPluginsToCore();
       res.writeHead(ok ? 204 : 404);
       res.end();
       return true;
