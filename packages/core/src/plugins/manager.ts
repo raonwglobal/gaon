@@ -3,14 +3,31 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type { McpPlugin, PluginToolDefinition } from "./interface.js";
+import type {
+  McpPlugin,
+  PluginToolDefinition,
+  ToolCallContext,
+} from "./interface.js";
 import { createPlugin } from "./index.js";
 import { metrics } from "../metrics.js";
 import { logger } from "../logger.js";
+import type { SecretMap } from "../session-secrets.js";
+import { createUpstreamFetch } from "../session-secrets.js";
+
+export interface PluginManagerOptions {
+  sessionId: string;
+  subject?: string;
+  secrets: SecretMap;
+}
 
 export class PluginManager {
   private plugins: McpPlugin[] = [];
   private toolOwner = new Map<string, McpPlugin>();
+  private opts: PluginManagerOptions;
+
+  constructor(opts: PluginManagerOptions) {
+    this.opts = opts;
+  }
 
   async loadPlugins(
     ids: string[],
@@ -21,7 +38,7 @@ export class PluginManager {
         const plugin = await createPlugin(id);
         await plugin.initialize(configs[id] ?? {});
         this.plugins.push(plugin);
-        logger.info("plugin loaded", { id });
+        logger.info("plugin loaded", { id, sessionId: this.opts.sessionId });
       } catch (err) {
         logger.error("plugin load failed", { id, error: String(err) });
       }
@@ -58,18 +75,29 @@ export class PluginManager {
       })),
     }));
 
-    // MCP SDK handler generics vary across minor versions — cast keeps build stable
+    const secrets = this.opts.secrets;
+    const sessionId = this.opts.sessionId;
+    const subject = this.opts.subject;
+    const upstreamFetch = createUpstreamFetch(secrets);
+
     server.setRequestHandler(
       CallToolRequestSchema,
-      (async (request: { params: { name: string; arguments?: Record<string, unknown> } }) => {
+      (async (request: {
+        params: { name: string; arguments?: Record<string, unknown> };
+      }) => {
         const name = request.params.name;
-        const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+        const args = (request.params.arguments ?? {}) as Record<
+          string,
+          unknown
+        >;
         const owner = this.toolOwner.get(name);
 
         if (!owner?.callTool) {
           metrics.recordToolCall(name, true);
           return {
-            content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
+            content: [
+              { type: "text" as const, text: `Unknown tool: ${name}` },
+            ],
             isError: true,
           };
         }
@@ -78,8 +106,17 @@ export class PluginManager {
           ? name.slice(owner.manifest.id.length + 1)
           : name;
 
+        const ctx: ToolCallContext = {
+          name: localName,
+          arguments: args,
+          sessionId,
+          subject,
+          getSecret: (n: string) => secrets.get(n),
+          upstreamFetch,
+        };
+
         try {
-          const result = await owner.callTool({ name: localName, arguments: args });
+          const result = await owner.callTool(ctx);
           metrics.recordToolCall(name, Boolean(result.isError));
           return result;
         } catch (err) {
@@ -96,6 +133,10 @@ export class PluginManager {
         }
       }) as never
     );
+  }
+
+  getToolNames(): string[] {
+    return [...this.toolOwner.keys()];
   }
 
   async shutdownAll(): Promise<void> {
