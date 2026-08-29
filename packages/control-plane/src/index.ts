@@ -8,6 +8,8 @@ import { handleLogs } from "./routes/logs.js";
 import { handleCatalog } from "./routes/catalog.js";
 import { handleAuth } from "./routes/auth.js";
 import { handleUsers } from "./routes/users.js";
+import { handleVault } from "./routes/vault.js";
+import { handleAudit } from "./routes/audit.js";
 import { syncAllToCore } from "./core-sync.js";
 import { resolveAuth, requireRole, type AuthContext } from "./auth/session.js";
 import { userStore } from "./auth/users.js";
@@ -78,6 +80,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   (req as IncomingMessage & { auth?: AuthContext }).auth = auth;
 
   if (await handleUsers(req, res, pathname, auth)) return;
+  if (await handleVault(req, res, pathname, auth)) return;
+  if (await handleAudit(req, res, pathname, auth)) return;
 
   if (req.method === "POST" && pathname === "/api/sync") {
     if (!requireRole(auth, ["operator"])) {
