@@ -30,7 +30,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ] && grep -q '"node_modules/' package-lock.json; then
+            npm ci
+          else
+            echo "package-lock incomplete or missing; using npm install"
+            npm install
+          fi
 
       - name: Run tests
         run: npm test
