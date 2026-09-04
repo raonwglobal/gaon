@@ -32,19 +32,25 @@ describe("PluginManager tool prefix", () => {
   });
 
   it("qualifies tool names with plugin id", async () => {
-    const pm = new PluginManager();
+    const pm = new PluginManager({
+      sessionId: "test-session",
+      secrets: new Map(),
+    });
     await pm.loadPlugins(["fake"]);
 
     // Minimal server stub
     const handlers = new Map<string, Function>();
     const server = {
-      setRequestHandler(schema: { shape?: { method?: { value?: string } } } | string, fn: Function) {
+      setRequestHandler(
+        schema: { shape?: { method?: { value?: string } } } | string,
+        fn: Function
+      ) {
         const method =
           typeof schema === "string"
             ? schema
             : (schema as { parse?: unknown })
-            ? "tools/list"
-            : "unknown";
+              ? "tools/list"
+              : "unknown";
         handlers.set(String(method), fn);
       },
     } as any;
