@@ -12,7 +12,12 @@ import { handleVault } from "./routes/vault.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleInternalVault } from "./routes/internal-vault.js";
 import { syncAllToCore } from "./core-sync.js";
-import { resolveAuth, requireRole, type AuthContext } from "./auth/session.js";
+import {
+  isAuthDisabled,
+  resolveAuth,
+  requireRole,
+  type AuthContext,
+} from "./auth/session.js";
 import { userStore } from "./auth/users.js";
 
 const PORT = Number(process.env.CONTROL_PORT ?? 3001);
@@ -62,7 +67,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     json(res, 200, {
       status: "ok",
       service: "control-plane",
-      auth: userStore.list().length > 0 ? "users" : "bootstrap-required",
+      auth: isAuthDisabled()
+        ? "disabled-open-access"
+        : userStore.list().length > 0
+          ? "users"
+          : "bootstrap-required",
     });
     return;
   }
@@ -74,7 +83,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (!auth) {
     json(res, 401, {
       error: "Unauthorized",
-      hint: "POST /api/auth/login or configure BOOTSTRAP_ADMIN_PASSWORD",
+      hint: "POST /api/auth/login or set AUTH_DISABLED=true for open access",
     });
     return;
   }
@@ -108,7 +117,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
 server.listen(PORT, () => {
   console.log(`Control Plane listening on :${PORT}`);
-  console.log(
-    `Users: ${userStore.list().length} (bootstrap via BOOTSTRAP_ADMIN_PASSWORD)`
-  );
+  if (isAuthDisabled()) {
+    console.warn(
+      "[auth] AUTH_DISABLED=true — open access (no login). Do not use on public networks."
+    );
+  } else {
+    console.log(
+      `Users: ${userStore.list().length} (bootstrap via BOOTSTRAP_ADMIN_PASSWORD)`
+    );
+  }
 });
