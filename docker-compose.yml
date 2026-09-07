@@ -1,11 +1,15 @@
 # gaon MCP SSE Platform — full stack
-# depends_on is a strict DAG (no cycles) for podman-compose compatibility.
 #
-# Start order: install-worker → control-plane → (plugin-runtime) → core → dashboard
-# Soft links (no depends_on): core↔control via CONTROL_URL / CORE_URL
+# Open access (no login): AUTH_DISABLED / gateway / tokens are hardcoded below.
+# Start: docker compose up --build -d
 #
-# Auth: AUTH_DISABLED=true (default) → anyone can use dashboard/API without login.
-# Set AUTH_DISABLED=false and BOOTSTRAP_ADMIN_PASSWORD to re-enable user login.
+# Dashboard http://localhost:5173
+# Control  http://localhost:3001
+# Core     http://localhost:3000
+# Runtime  http://localhost:8080
+#
+# To require login later, set AUTH_DISABLED=false and BOOTSTRAP_ADMIN_PASSWORD=...
+
 services:
   install-worker:
     build:
@@ -13,14 +17,14 @@ services:
       dockerfile: Dockerfile
     image: gaon/install-worker:local
     environment:
-      - INSTALL_WORKER_PORT=3002
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
-      - PLUGINS_DIR=/plugins
-      - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
-      - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
-      - GIT_ALLOW_HTTP=${GIT_ALLOW_HTTP:-false}
-      - PLUGIN_SIGNING_KEY=${PLUGIN_SIGNING_KEY:-}
-      - PLUGIN_SIGNATURE_REQUIRED=${PLUGIN_SIGNATURE_REQUIRED:-false}
+      INSTALL_WORKER_PORT: "3002"
+      INTERNAL_TOKEN: ""
+      PLUGINS_DIR: /plugins
+      GIT_ALLOW_HOSTS: github.com,gitlab.com
+      GIT_BLOCK_PRIVATE: "true"
+      GIT_ALLOW_HTTP: "false"
+      PLUGIN_SIGNING_KEY: ""
+      PLUGIN_SIGNATURE_REQUIRED: "false"
     volumes:
       - ./plugins:/plugins
     restart: unless-stopped
@@ -33,8 +37,8 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - PORT=8080
-      - PLUGIN_ID=${PLUGIN_RUNTIME_ID:-echo}
+      PORT: "8080"
+      PLUGIN_ID: echo
     restart: unless-stopped
 
   control-plane:
@@ -45,28 +49,29 @@ services:
     ports:
       - "3001:3001"
     environment:
-      - CONTROL_PORT=3001
-      # Open access (no login). Set to false to require user accounts.
-      - AUTH_DISABLED=${AUTH_DISABLED:-true}
-      - BOOTSTRAP_ADMIN_USER=${BOOTSTRAP_ADMIN_USER:-admin}
-      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
-      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
-      - CORE_URL=http://core:3000
-      - DATABASE_PATH=/data/platform.json
-      - USERS_PATH=/data/users.json
-      - VAULT_PATH=/data/vault.json
-      - AUDIT_LOG_PATH=/data/audit.log
-      - PLUGINS_DIR=/plugins
-      - ADMIN_CORS_ORIGINS=${ADMIN_CORS_ORIGINS:-*}
-      - COOKIE_SECURE=${COOKIE_SECURE:-false}
-      - VAULT_MASTER_KEY=${VAULT_MASTER_KEY:-}
-      - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
-      - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
-      - GIT_ALLOW_HTTP=${GIT_ALLOW_HTTP:-false}
-      - INSTALL_WORKER_URL=${INSTALL_WORKER_URL:-http://install-worker:3002}
-      - PLUGIN_SIGNING_KEY=${PLUGIN_SIGNING_KEY:-}
-      - PLUGIN_SIGNATURE_REQUIRED=${PLUGIN_SIGNATURE_REQUIRED:-false}
+      CONTROL_PORT: "3001"
+      # --- open access (hardcoded) ---
+      AUTH_DISABLED: "true"
+      BOOTSTRAP_ADMIN_USER: admin
+      BOOTSTRAP_ADMIN_PASSWORD: ""
+      ADMIN_TOKEN: ""
+      INTERNAL_TOKEN: ""
+      # ------------------------------
+      CORE_URL: http://core:3000
+      DATABASE_PATH: /data/platform.json
+      USERS_PATH: /data/users.json
+      VAULT_PATH: /data/vault.json
+      AUDIT_LOG_PATH: /data/audit.log
+      PLUGINS_DIR: /plugins
+      ADMIN_CORS_ORIGINS: "*"
+      COOKIE_SECURE: "false"
+      VAULT_MASTER_KEY: ""
+      GIT_ALLOW_HOSTS: github.com,gitlab.com
+      GIT_BLOCK_PRIVATE: "true"
+      GIT_ALLOW_HTTP: "false"
+      INSTALL_WORKER_URL: http://install-worker:3002
+      PLUGIN_SIGNING_KEY: ""
+      PLUGIN_SIGNATURE_REQUIRED: "false"
     volumes:
       - control-data:/data
       - ./plugins:/plugins
@@ -82,22 +87,24 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - PORT=3000
-      - ENABLED_PLUGINS=${ENABLED_PLUGINS:-weather,echo}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
-      - RATE_LIMIT_PER_MIN=${RATE_LIMIT_PER_MIN:-120}
-      - MAX_SESSIONS=${MAX_SESSIONS:-500}
-      - SESSION_IDLE_TIMEOUT_MS=${SESSION_IDLE_TIMEOUT_MS:-1800000}
-      - PLUGINS_DIR=/app/plugins
-      - PLUGIN_RUNTIME=${PLUGIN_RUNTIME:-inprocess}
-      - ORCHESTRATOR=${ORCHESTRATOR:-endpoint}
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
-      - API_SECRET_TOKEN=${API_SECRET_TOKEN:-}
-      - GATEWAY_REQUIRE_AUTH=${GATEWAY_REQUIRE_AUTH:-false}
-      - GATEWAY_TOKENS=${GATEWAY_TOKENS:-}
-      - GATEWAY_TOKEN_MAP=${GATEWAY_TOKEN_MAP:-}
-      - CONTROL_URL=http://control-plane:3001
-      - VAULT_SESSION_INJECT=${VAULT_SESSION_INJECT:-false}
+      PORT: "3000"
+      ENABLED_PLUGINS: weather,echo
+      ALLOWED_ORIGINS: "*"
+      RATE_LIMIT_PER_MIN: "120"
+      MAX_SESSIONS: "500"
+      SESSION_IDLE_TIMEOUT_MS: "1800000"
+      PLUGINS_DIR: /app/plugins
+      PLUGIN_RUNTIME: inprocess
+      ORCHESTRATOR: endpoint
+      # --- open access (hardcoded) ---
+      INTERNAL_TOKEN: ""
+      API_SECRET_TOKEN: ""
+      GATEWAY_REQUIRE_AUTH: "false"
+      GATEWAY_TOKENS: ""
+      GATEWAY_TOKEN_MAP: ""
+      # ------------------------------
+      CONTROL_URL: http://control-plane:3001
+      VAULT_SESSION_INJECT: "false"
     volumes:
       - ./plugins:/app/plugins:ro
     depends_on:
@@ -112,7 +119,7 @@ services:
     ports:
       - "5173:80"
     environment:
-      - CONTROL_API_BASE=${CONTROL_API_BASE:-}
+      CONTROL_API_BASE: ""
     depends_on:
       - control-plane
     restart: unless-stopped
