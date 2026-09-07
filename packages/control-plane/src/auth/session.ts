@@ -14,6 +14,28 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
+/** When true, all Control Plane APIs accept anonymous admin (no login). */
+export function isAuthDisabled(): boolean {
+  const v = (process.env.AUTH_DISABLED || "").toLowerCase();
+  return v === "true" || v === "1" || v === "yes" || v === "open";
+}
+
+export function openAccessAuth(): AuthContext {
+  return {
+    user: {
+      id: "open-access",
+      username: "anonymous",
+      role: "admin",
+      active: true,
+      createdAt: 0,
+      updatedAt: 0,
+    },
+    role: "admin",
+    sessionId: "open-access",
+    viaLegacyToken: true,
+  };
+}
+
 function parseCookies(req: IncomingMessage): Record<string, string> {
   const header = req.headers.cookie || "";
   const out: Record<string, string> = {};
@@ -63,6 +85,10 @@ export function clearSessionCookie(res: ServerResponse): void {
 }
 
 export function resolveAuth(req: IncomingMessage): AuthContext | null {
+  if (isAuthDisabled()) {
+    return openAccessAuth();
+  }
+
   const cookies = parseCookies(req);
   const sid = cookies[COOKIE_NAME];
   if (sid) {
@@ -96,6 +122,19 @@ export function resolveAuth(req: IncomingMessage): AuthContext | null {
           viaLegacyToken: true,
         };
       }
+      return {
+        user: {
+          id: "legacy-admin",
+          username: "admin",
+          role: "admin",
+          active: true,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        role: "admin",
+        sessionId: "legacy-token",
+        viaLegacyToken: true,
+      };
     }
   }
 
@@ -103,6 +142,7 @@ export function resolveAuth(req: IncomingMessage): AuthContext | null {
 }
 
 export function requireRole(auth: AuthContext, allowed: Role[]): boolean {
+  if (isAuthDisabled()) return true;
   const order: Role[] = ["viewer", "user", "operator", "admin"];
   const need = Math.min(...allowed.map((r) => order.indexOf(r)));
   return order.indexOf(auth.role) >= need;
@@ -112,6 +152,7 @@ export function canAccessPlugin(
   auth: AuthContext,
   ownerUserId?: string
 ): boolean {
+  if (isAuthDisabled()) return true;
   if (auth.role === "admin" || auth.role === "operator") return true;
   if (!ownerUserId) return false;
   return ownerUserId === auth.user.id;
