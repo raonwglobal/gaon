@@ -7,19 +7,35 @@ export interface GatewayAuthResult {
   reason?: string;
 }
 
+/** Normalize compose env: strip wrapping quotes and treat empty as unset. */
+function envVal(name: string): string {
+  let v = process.env[name];
+  if (v == null) return "";
+  v = v.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
+function isTruthyEnv(name: string): boolean {
+  const v = envVal(name).toLowerCase();
+  return v === "true" || v === "1" || v === "yes" || v === "on";
+}
+
 function collectValidTokens(): string[] {
   const tokens = new Set<string>();
-  // When open access is explicit, ignore platform-persisted secrets
-  const requireAuth =
-    process.env.GATEWAY_REQUIRE_AUTH === "true" ||
-    process.env.GATEWAY_REQUIRE_AUTH === "1";
+  const requireAuth = isTruthyEnv("GATEWAY_REQUIRE_AUTH");
   if (requireAuth) {
-    const fromPlatform = getPlatformConfig().apiSecretToken;
+    const fromPlatform = getPlatformConfig().apiSecretToken?.trim();
     if (fromPlatform) tokens.add(fromPlatform);
   }
-  const envOne = process.env.API_SECRET_TOKEN;
+  const envOne = envVal("API_SECRET_TOKEN");
   if (envOne) tokens.add(envOne);
-  const multi = process.env.GATEWAY_TOKENS || "";
+  const multi = envVal("GATEWAY_TOKENS");
   for (const t of multi.split(",")) {
     const v = t.trim();
     if (v) tokens.add(v);
@@ -40,18 +56,14 @@ function extractCredential(req: IncomingMessage): string | undefined {
 
 /**
  * Authenticate MCP SSE / message clients.
- * - GATEWAY_REQUIRE_AUTH=false (default): always allow; optional token only sets subject
+ * - GATEWAY_REQUIRE_AUTH=false (default): always allow anonymous
  * - GATEWAY_REQUIRE_AUTH=true: credential required
- * - Tokens from API_SECRET_TOKEN, GATEWAY_TOKENS (and platform config only when require=true)
  */
 export function authenticateGateway(req: IncomingMessage): GatewayAuthResult {
-  const requireAuth =
-    process.env.GATEWAY_REQUIRE_AUTH === "true" ||
-    process.env.GATEWAY_REQUIRE_AUTH === "1";
+  const requireAuth = isTruthyEnv("GATEWAY_REQUIRE_AUTH");
   const valid = collectValidTokens();
   const credential = extractCredential(req);
 
-  // Explicit open gateway: never block on missing credential
   if (!requireAuth) {
     if (credential && valid.length > 0 && valid.includes(credential)) {
       const subjectHeader =
