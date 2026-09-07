@@ -58,9 +58,9 @@ async function handleSseMessage(
   sessionId: string,
   path: string
 ): Promise<void> {
+  // sessionManager.get updates lastActivity
   const session = sessionManager.get(sessionId);
-  // transport is attached early in McpSession.initialize; isInitialized may lag
-  // a few ms after the endpoint event — accept if transport exists.
+  // transport is attached early in McpSession.initialize; accept if present
   if (!session || !session.transport) {
     metrics.recordHttp(path, true);
     if (listPeers().length > 0) {
@@ -79,7 +79,6 @@ async function handleSseMessage(
     return;
   }
 
-  sessionManager.touch(sessionId);
   metrics.recordHttp(path);
   try {
     await session.transport.handlePostMessage(req, res);
