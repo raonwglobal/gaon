@@ -3,6 +3,9 @@
 #
 # Start order: install-worker → control-plane → (plugin-runtime) → core → dashboard
 # Soft links (no depends_on): core↔control via CONTROL_URL / CORE_URL
+#
+# Auth: AUTH_DISABLED=true (default) → anyone can use dashboard/API without login.
+# Set AUTH_DISABLED=false and BOOTSTRAP_ADMIN_PASSWORD to re-enable user login.
 services:
   install-worker:
     build:
@@ -11,7 +14,7 @@ services:
     image: gaon/install-worker:local
     environment:
       - INSTALL_WORKER_PORT=3002
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
       - PLUGINS_DIR=/plugins
       - GIT_ALLOW_HOSTS=${GIT_ALLOW_HOSTS:-github.com,gitlab.com}
       - GIT_BLOCK_PRIVATE=${GIT_BLOCK_PRIVATE:-true}
@@ -43,10 +46,12 @@ services:
       - "3001:3001"
     environment:
       - CONTROL_PORT=3001
+      # Open access (no login). Set to false to require user accounts.
+      - AUTH_DISABLED=${AUTH_DISABLED:-true}
       - BOOTSTRAP_ADMIN_USER=${BOOTSTRAP_ADMIN_USER:-admin}
-      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-changeme-please}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
       - ADMIN_TOKEN=${ADMIN_TOKEN:-}
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
       - CORE_URL=http://core:3000
       - DATABASE_PATH=/data/platform.json
       - USERS_PATH=/data/users.json
@@ -86,13 +91,13 @@ services:
       - PLUGINS_DIR=/app/plugins
       - PLUGIN_RUNTIME=${PLUGIN_RUNTIME:-inprocess}
       - ORCHESTRATOR=${ORCHESTRATOR:-endpoint}
-      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-change-me-internal}
+      - INTERNAL_TOKEN=${INTERNAL_TOKEN:-}
       - API_SECRET_TOKEN=${API_SECRET_TOKEN:-}
       - GATEWAY_REQUIRE_AUTH=${GATEWAY_REQUIRE_AUTH:-false}
       - GATEWAY_TOKENS=${GATEWAY_TOKENS:-}
       - GATEWAY_TOKEN_MAP=${GATEWAY_TOKEN_MAP:-}
       - CONTROL_URL=http://control-plane:3001
-      - VAULT_SESSION_INJECT=${VAULT_SESSION_INJECT:-true}
+      - VAULT_SESSION_INJECT=${VAULT_SESSION_INJECT:-false}
     volumes:
       - ./plugins:/app/plugins:ro
     depends_on:
