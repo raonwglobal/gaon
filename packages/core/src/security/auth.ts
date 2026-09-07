@@ -9,8 +9,14 @@ export interface GatewayAuthResult {
 
 function collectValidTokens(): string[] {
   const tokens = new Set<string>();
-  const fromPlatform = getPlatformConfig().apiSecretToken;
-  if (fromPlatform) tokens.add(fromPlatform);
+  // When open access is explicit, ignore platform-persisted secrets
+  const requireAuth =
+    process.env.GATEWAY_REQUIRE_AUTH === "true" ||
+    process.env.GATEWAY_REQUIRE_AUTH === "1";
+  if (requireAuth) {
+    const fromPlatform = getPlatformConfig().apiSecretToken;
+    if (fromPlatform) tokens.add(fromPlatform);
+  }
   const envOne = process.env.API_SECRET_TOKEN;
   if (envOne) tokens.add(envOne);
   const multi = process.env.GATEWAY_TOKENS || "";
@@ -34,8 +40,9 @@ function extractCredential(req: IncomingMessage): string | undefined {
 
 /**
  * Authenticate MCP SSE / message clients.
- * - GATEWAY_REQUIRE_AUTH=true: credential required even if no tokens configured
- * - Tokens from API_SECRET_TOKEN, platform config, GATEWAY_TOKENS
+ * - GATEWAY_REQUIRE_AUTH=false (default): always allow; optional token only sets subject
+ * - GATEWAY_REQUIRE_AUTH=true: credential required
+ * - Tokens from API_SECRET_TOKEN, GATEWAY_TOKENS (and platform config only when require=true)
  */
 export function authenticateGateway(req: IncomingMessage): GatewayAuthResult {
   const requireAuth =
@@ -44,14 +51,25 @@ export function authenticateGateway(req: IncomingMessage): GatewayAuthResult {
   const valid = collectValidTokens();
   const credential = extractCredential(req);
 
-  if (valid.length === 0) {
-    if (requireAuth) {
-      return {
-        ok: false,
-        reason: "gateway_auth_required_but_no_tokens_configured",
-      };
+  // Explicit open gateway: never block on missing credential
+  if (!requireAuth) {
+    if (credential && valid.length > 0 && valid.includes(credential)) {
+      const subjectHeader =
+        req.headers["x-client-id"] || req.headers["x-user-id"];
+      const subject =
+        typeof subjectHeader === "string" && subjectHeader.trim()
+          ? subjectHeader.trim()
+          : `token:${credential.slice(0, 8)}`;
+      return { ok: true, subject };
     }
     return { ok: true, subject: "anonymous" };
+  }
+
+  if (valid.length === 0) {
+    return {
+      ok: false,
+      reason: "gateway_auth_required_but_no_tokens_configured",
+    };
   }
 
   if (!credential) {
