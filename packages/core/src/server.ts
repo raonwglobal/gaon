@@ -1,22 +1,16 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { parse } from "node:url";
-import { randomUUID } from "node:crypto";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { McpSession } from "./session.js";
 import { SessionManager } from "./session-manager.js";
 import { applyCors } from "./security/cors.js";
 import { authenticateGateway } from "./security/auth.js";
-import {
-  parsePluginScopeHeader,
-  parseSessionSecretsHeader,
-} from "./session-secrets.js";
 import { rateLimit } from "./security/rate-limit.js";
 import type { ServerConfig } from "./config.js";
 import {
   runtimeState,
   setEnabledPlugins,
   setPluginOwners,
-  resolveSessionPlugins,
   setPluginConfig,
   setPlatformConfig,
   getPlatformConfig,
@@ -55,6 +49,50 @@ function internalAuth(req: IncomingMessage, config: ServerConfig): boolean {
       ? req.headers["authorization"].replace(/^Bearer\s+/i, "")
       : undefined);
   return token === config.internalToken;
+}
+
+async function handleSseMessage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  sessionManager: SessionManager,
+  sessionId: string,
+  path: string
+): Promise<void> {
+  const session = sessionManager.get(sessionId);
+  // transport is attached early in McpSession.initialize; isInitialized may lag
+  // a few ms after the endpoint event — accept if transport exists.
+  if (!session || !session.transport) {
+    metrics.recordHttp(path, true);
+    if (listPeers().length > 0) {
+      const headers = affinityHeaders(sessionId);
+      res.writeHead(404, { "Content-Type": "application/json", ...headers });
+      res.end(
+        JSON.stringify({
+          error: "Session not found or not ready",
+          owner: headers["X-Session-Owner"],
+        })
+      );
+      return;
+    }
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Session not found or not ready" }));
+    return;
+  }
+
+  sessionManager.touch(sessionId);
+  metrics.recordHttp(path);
+  try {
+    await session.transport.handlePostMessage(req, res);
+  } catch (error) {
+    logger.error("handlePostMessage error", {
+      sessionId,
+      error: String(error),
+    });
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Internal error" }));
+    }
+  }
 }
 
 export function createMcpSseServer(config: ServerConfig) {
@@ -249,8 +287,8 @@ export function createMcpSseServer(config: ServerConfig) {
               typeof body.maxSessions === "number" ? body.maxSessions : undefined,
             apiSecretToken:
               typeof body.apiSecretToken === "string"
-              ? body.apiSecretToken
-              : undefined,
+                ? body.apiSecretToken
+                : undefined,
             sessionIdleTimeoutMs:
               typeof body.sessionIdleTimeoutMs === "number"
                 ? body.sessionIdleTimeoutMs
@@ -266,6 +304,33 @@ export function createMcpSseServer(config: ServerConfig) {
         }
         return;
       }
+    }
+
+    // Public health / root — no gateway auth
+    if (req.method === "GET" && (path === "/health" || path === "/")) {
+      metrics.recordHttp(path);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          service: "mcp-sse-core",
+          transport: "sse",
+          sse: "/sse",
+          message: "/message",
+          instanceId: getInstanceId(),
+          peers: listPeers(),
+          sessions: sessionManager.size,
+          uptime: process.uptime(),
+          plugins: runtimeState.enabledPlugins,
+          pluginRuntime: getPluginRuntimeMode(),
+          catalogEpoch: runtimeCatalog.getEpoch(),
+          discoveryEpoch: getDiscoveryEpoch(),
+          catalogPlugins: runtimeCatalog.readyPlugins().map((p) => p.id),
+          sandbox: process.env.SANDBOX_PLUGINS === "true",
+          metrics: metrics.snapshot(sessionManager.size),
+        })
+      );
+      return;
     }
 
     if (!rateLimit(req, res)) {
@@ -292,7 +357,11 @@ export function createMcpSseServer(config: ServerConfig) {
       }
 
       metrics.recordHttp(path);
-      const sessionId = randomUUID();
+
+      // CRITICAL: session key MUST equal SSEServerTransport.sessionId,
+      // which is what the endpoint event advertises to clients (Grok, Claude, etc.).
+      const transport = new SSEServerTransport("/message", res);
+      const sessionId = transport.sessionId;
 
       if (listPeers().length > 0 && !shouldOwnSession(sessionId)) {
         const owner = affinityHeaders(sessionId)["X-Session-Owner"];
@@ -312,7 +381,6 @@ export function createMcpSseServer(config: ServerConfig) {
         return;
       }
 
-      const transport = new SSEServerTransport("/message", res);
       const session = new McpSession(sessionId);
       sessionManager.add(session);
 
@@ -325,6 +393,7 @@ export function createMcpSseServer(config: ServerConfig) {
         );
         logger.info("session created", {
           sessionId,
+          transportSessionId: transport.sessionId,
           subject: gatewayAuth.subject,
           plugins: sessionPlugins,
         });
@@ -346,7 +415,11 @@ export function createMcpSseServer(config: ServerConfig) {
       return;
     }
 
-    if (req.method === "POST" && path === "/message") {
+    // SDK advertises /message?sessionId=...; also accept /messages for compatibility
+    if (
+      req.method === "POST" &&
+      (path === "/message" || path === "/messages")
+    ) {
       const sessionId = url.query.sessionId as string | undefined;
       if (!sessionId) {
         metrics.recordHttp(path, true);
@@ -354,58 +427,7 @@ export function createMcpSseServer(config: ServerConfig) {
         res.end(JSON.stringify({ error: "sessionId required" }));
         return;
       }
-
-      const session = sessionManager.get(sessionId);
-      if (!session || !session.isInitialized || !session.transport) {
-        metrics.recordHttp(path, true);
-        if (listPeers().length > 0) {
-          const headers = affinityHeaders(sessionId);
-          res.writeHead(404, { "Content-Type": "application/json", ...headers });
-          res.end(
-            JSON.stringify({
-              error: "Session not found or not ready",
-              owner: headers["X-Session-Owner"],
-            })
-          );
-          return;
-        }
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Session not found or not ready" }));
-        return;
-      }
-
-      metrics.recordHttp(path);
-      try {
-        await session.transport.handlePostMessage(req, res);
-      } catch (error) {
-        logger.error("handlePostMessage error", { error: String(error) });
-        if (!res.headersSent) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "Internal error" }));
-        }
-      }
-      return;
-    }
-
-    if (req.method === "GET" && path === "/health") {
-      metrics.recordHttp(path);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          status: "ok",
-          instanceId: getInstanceId(),
-          peers: listPeers(),
-          sessions: sessionManager.size,
-          uptime: process.uptime(),
-          plugins: runtimeState.enabledPlugins,
-          pluginRuntime: getPluginRuntimeMode(),
-          catalogEpoch: runtimeCatalog.getEpoch(),
-          discoveryEpoch: getDiscoveryEpoch(),
-          catalogPlugins: runtimeCatalog.readyPlugins().map((p) => p.id),
-          sandbox: process.env.SANDBOX_PLUGINS === "true",
-          metrics: metrics.snapshot(sessionManager.size),
-        })
-      );
+      await handleSseMessage(req, res, sessionManager, sessionId, path);
       return;
     }
 
