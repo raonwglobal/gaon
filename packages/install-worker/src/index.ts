@@ -6,7 +6,8 @@ const INTERNAL_TOKEN =
   process.env.INTERNAL_TOKEN || process.env.ADMIN_TOKEN || "";
 
 function authorized(req: IncomingMessage): boolean {
-  if (!INTERNAL_TOKEN) return false;
+  // Empty token = open (local / AUTH_DISABLED style deployments)
+  if (!INTERNAL_TOKEN) return true;
   const token =
     req.headers["x-internal-token"] ||
     (typeof req.headers.authorization === "string"
@@ -33,6 +34,7 @@ const server = createServer(async (req, res) => {
         status: "ok",
         service: "install-worker",
         signatureRequired: process.env.PLUGIN_SIGNATURE_REQUIRED === "true",
+        auth: INTERNAL_TOKEN ? "token" : "open",
       })
     );
     return;
@@ -76,4 +78,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`install-worker listening on :${PORT}`);
+  if (!INTERNAL_TOKEN) {
+    console.warn("[install-worker] INTERNAL_TOKEN empty — install API is open");
+  }
 });
