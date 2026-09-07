@@ -14,9 +14,17 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
-/** When true, all Control Plane APIs accept anonymous admin (no login). */
+/**
+ * Open access when AUTH_DISABLED is true/1/yes/open, OR when unset (default open).
+ * Set AUTH_DISABLED=false to require login.
+ */
 export function isAuthDisabled(): boolean {
-  const v = (process.env.AUTH_DISABLED || "").toLowerCase();
+  const raw = process.env.AUTH_DISABLED;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return true; // default: open access
+  }
+  const v = String(raw).toLowerCase().trim();
+  if (v === "false" || v === "0" || v === "no" || v === "off") return false;
   return v === "true" || v === "1" || v === "yes" || v === "open";
 }
 
