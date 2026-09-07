@@ -14,16 +14,29 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
+function normalizeEnv(raw: string | undefined): string {
+  if (raw == null) return "";
+  let v = raw.trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
 /**
  * Open access when AUTH_DISABLED is true/1/yes/open, OR when unset (default open).
  * Set AUTH_DISABLED=false to require login.
+ * Handles compose list form AUTH_DISABLED="true" (quotes become part of value).
  */
 export function isAuthDisabled(): boolean {
   const raw = process.env.AUTH_DISABLED;
   if (raw === undefined || raw === null || String(raw).trim() === "") {
-    return true; // default: open access
+    return true;
   }
-  const v = String(raw).toLowerCase().trim();
+  const v = normalizeEnv(raw).toLowerCase();
   if (v === "false" || v === "0" || v === "no" || v === "off") return false;
   return v === "true" || v === "1" || v === "yes" || v === "open";
 }
@@ -111,7 +124,7 @@ export function resolveAuth(req: IncomingMessage): AuthContext | null {
     }
   }
 
-  const legacy = process.env.ADMIN_TOKEN || "";
+  const legacy = normalizeEnv(process.env.ADMIN_TOKEN);
   if (legacy && legacy !== "change-me") {
     const header =
       req.headers["x-admin-token"] ||
