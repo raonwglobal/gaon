@@ -4,6 +4,8 @@ import {
   clearSessionCookie,
   createSession,
   destroySession,
+  isAuthDisabled,
+  openAccessAuth,
   resolveAuth,
   setSessionCookie,
 } from "../auth/session.js";
@@ -22,6 +24,18 @@ export async function handleAuth(
   pathname: string
 ): Promise<boolean> {
   if (pathname === "/api/auth/login" && req.method === "POST") {
+    if (isAuthDisabled()) {
+      const auth = openAccessAuth();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          user: auth.user,
+          mode: "open-access",
+          message: "AUTH_DISABLED: login not required",
+        })
+      );
+      return true;
+    }
     try {
       const body = JSON.parse(await readBody(req)) as {
         username?: string;
@@ -50,15 +64,23 @@ export async function handleAuth(
   }
 
   if (pathname === "/api/auth/logout" && req.method === "POST") {
-    const auth = resolveAuth(req);
-    if (auth && !auth.viaLegacyToken) destroySession(auth.sessionId);
-    clearSessionCookie(res);
+    if (!isAuthDisabled()) {
+      const auth = resolveAuth(req);
+      if (auth && !auth.viaLegacyToken) destroySession(auth.sessionId);
+      clearSessionCookie(res);
+    }
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true }));
     return true;
   }
 
   if (pathname === "/api/auth/me" && req.method === "GET") {
+    if (isAuthDisabled()) {
+      const auth = openAccessAuth();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ user: auth.user, mode: "open-access" }));
+      return true;
+    }
     const auth = resolveAuth(req);
     if (!auth) {
       res.writeHead(401, { "Content-Type": "application/json" });
