@@ -17,6 +17,7 @@ import type { PluginRecord } from "./types";
 
 export function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [openAccess, setOpenAccess] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: "", password: "" });
   const [plugins, setPlugins] = useState<PluginRecord[]>([]);
@@ -34,8 +35,17 @@ export function App() {
 
   useEffect(() => {
     fetchMe()
-      .then((r) => setUser(r.user))
-      .catch(() => setUser(null))
+      .then((r) => {
+        setUser(r.user);
+        setOpenAccess(
+          r.user?.id === "open-access" ||
+            (r as { mode?: string }).mode === "open-access"
+        );
+      })
+      .catch(() => {
+        setUser(null);
+        setOpenAccess(false);
+      })
       .finally(() => setAuthChecked(true));
   }, []);
 
@@ -46,14 +56,14 @@ export function App() {
       if (tab === "plugins") {
         const data = await fetchPlugins();
         setPlugins(data.plugins || []);
-      } else if (tab === "users" && user.role === "admin") {
+      } else if (tab === "users" && user.role === "admin" && !openAccess) {
         const data = await fetchUsers();
         setUsers(data.users || []);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [user, tab]);
+  }, [user, tab, openAccess]);
 
   useEffect(() => {
     void reload();
@@ -116,8 +126,8 @@ export function App() {
             <button type="submit">Sign in</button>
           </form>
           <p className="muted" style={{ marginTop: 12 }}>
-            Set <code>BOOTSTRAP_ADMIN_PASSWORD</code> on control-plane to create
-            the first admin.
+            Open access: set <code>AUTH_DISABLED=true</code> on control-plane.
+            Or set <code>BOOTSTRAP_ADMIN_PASSWORD</code> to create the first admin.
           </p>
         </div>
       </div>
@@ -129,20 +139,24 @@ export function App() {
       <header>
         <h1>MCP SSE Platform</h1>
         <span className="muted">
-          {user.username} ({user.role})
+          {openAccess
+            ? "open access (AUTH_DISABLED)"
+            : `${user.username} (${user.role})`}
         </span>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() =>
-            void logout().then(() => {
-              setUser(null);
-              setMessage("Signed out");
-            })
-          }
-        >
-          Logout
-        </button>
+        {!openAccess && (
+          <button
+            type="button"
+            className="ghost"
+            onClick={() =>
+              void logout().then(() => {
+                setUser(null);
+                setMessage("Signed out");
+              })
+            }
+          >
+            Logout
+          </button>
+        )}
         <nav className="nav">
           <button
             type="button"
@@ -151,7 +165,7 @@ export function App() {
           >
             plugins
           </button>
-          {user.role === "admin" && (
+          {user.role === "admin" && !openAccess && (
             <button
               type="button"
               className={tab === "users" ? "active" : ""}
@@ -163,6 +177,12 @@ export function App() {
         </nav>
       </header>
 
+      {openAccess && (
+        <div className="success">
+          Authentication is disabled. Anyone with network access can use this
+          dashboard and APIs.
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
       {message && <div className="success">{message}</div>}
 
@@ -258,7 +278,7 @@ export function App() {
           </div>
 
           <div className="card">
-            <h2>My connectors</h2>
+            <h2>Connectors</h2>
             <table>
               <thead>
                 <tr>
@@ -314,7 +334,7 @@ export function App() {
         </>
       )}
 
-      {tab === "users" && user.role === "admin" && (
+      {tab === "users" && user.role === "admin" && !openAccess && (
         <>
           <div className="card">
             <h2>Create user</h2>
