@@ -113,7 +113,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (await handleConfig(req, res, pathname, auth)) return;
   if (await handleMetrics(req, res, pathname)) return;
   if (await handleLogs(req, res, pathname)) return;
-  if (await handleCatalog(req, res, pathname, auth)) return;
+  if (await handleCatalog(req, res, pathname)) return;
 
   json(res, 404, { error: "Not found" });
 });
