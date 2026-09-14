@@ -14,6 +14,7 @@ import {
   setPluginConfig,
   setPlatformConfig,
   getPlatformConfig,
+  getPluginLoadReport,
 } from "./runtime-state.js";
 import {
   listBuiltinPluginIds,
@@ -58,9 +59,7 @@ async function handleSseMessage(
   sessionId: string,
   path: string
 ): Promise<void> {
-  // sessionManager.get updates lastActivity
   const session = sessionManager.get(sessionId);
-  // transport is attached early in McpSession.initialize; accept if present
   if (!session || !session.transport) {
     metrics.recordHttp(path, true);
     if (listPeers().length > 0) {
@@ -163,6 +162,7 @@ export function createMcpSseServer(config: ServerConfig) {
             pluginRuntime: getPluginRuntimeMode(),
             catalogEpoch: runtimeCatalog.getEpoch(),
             discoveryEpoch: getDiscoveryEpoch(),
+            loadReport: getPluginLoadReport(),
           })
         );
         return;
@@ -197,6 +197,7 @@ export function createMcpSseServer(config: ServerConfig) {
             discoveryEpoch: getDiscoveryEpoch(),
             mode: getPluginRuntimeMode(),
             catalog: runtimeCatalog.list(),
+            loadReport: getPluginLoadReport(),
           })
         );
         return;
@@ -305,7 +306,6 @@ export function createMcpSseServer(config: ServerConfig) {
       }
     }
 
-    // Public health / root — no gateway auth
     if (req.method === "GET" && (path === "/health" || path === "/")) {
       metrics.recordHttp(path);
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -326,6 +326,7 @@ export function createMcpSseServer(config: ServerConfig) {
           discoveryEpoch: getDiscoveryEpoch(),
           catalogPlugins: runtimeCatalog.readyPlugins().map((p) => p.id),
           sandbox: process.env.SANDBOX_PLUGINS === "true",
+          loadReport: getPluginLoadReport(),
           metrics: metrics.snapshot(sessionManager.size),
         })
       );
@@ -357,8 +358,6 @@ export function createMcpSseServer(config: ServerConfig) {
 
       metrics.recordHttp(path);
 
-      // CRITICAL: session key MUST equal SSEServerTransport.sessionId,
-      // which is what the endpoint event advertises to clients (Grok, Claude, etc.).
       const transport = new SSEServerTransport("/message", res);
       const sessionId = transport.sessionId;
 
@@ -414,7 +413,6 @@ export function createMcpSseServer(config: ServerConfig) {
       return;
     }
 
-    // SDK advertises /message?sessionId=...; also accept /messages for compatibility
     if (
       req.method === "POST" &&
       (path === "/message" || path === "/messages")
