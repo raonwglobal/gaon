@@ -10,6 +10,18 @@ export interface RuntimePlatformConfig {
   sessionIdleTimeoutMs: number;
 }
 
+export interface PluginLoadFailure {
+  id: string;
+  error: string;
+}
+
+export interface PluginLoadReport {
+  loaded: string[];
+  failed: PluginLoadFailure[];
+  tools: string[];
+  updatedAt: number;
+}
+
 export const runtimeState = {
   enabledPlugins: [] as string[],
   pluginConfigs: {} as Record<string, Record<string, unknown>>,
@@ -21,6 +33,13 @@ export const runtimeState = {
     maxSessions: 1000,
     sessionIdleTimeoutMs: 1_800_000,
   } as RuntimePlatformConfig,
+  /** Last session plugin load outcome (for ops visibility) */
+  pluginLoadReport: {
+    loaded: [] as string[],
+    failed: [] as PluginLoadFailure[],
+    tools: [] as string[],
+    updatedAt: 0,
+  } as PluginLoadReport,
 };
 
 export function setEnabledPlugins(ids: string[]): void {
@@ -36,6 +55,26 @@ export function setPluginConfig(
 
 export function setPluginOwners(owners: Record<string, string>): void {
   runtimeState.pluginOwners = { ...owners };
+}
+
+export function setPluginLoadReport(
+  report: Omit<PluginLoadReport, "updatedAt">
+): void {
+  runtimeState.pluginLoadReport = {
+    loaded: [...report.loaded],
+    failed: report.failed.map((f) => ({ ...f })),
+    tools: [...report.tools],
+    updatedAt: Date.now(),
+  };
+}
+
+export function getPluginLoadReport(): PluginLoadReport {
+  return {
+    loaded: [...runtimeState.pluginLoadReport.loaded],
+    failed: runtimeState.pluginLoadReport.failed.map((f) => ({ ...f })),
+    tools: [...runtimeState.pluginLoadReport.tools],
+    updatedAt: runtimeState.pluginLoadReport.updatedAt,
+  };
 }
 
 /**
