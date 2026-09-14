@@ -1,7 +1,13 @@
 import type { McpPlugin, McpPluginFactory } from "./interface.js";
 import { buildDiscoveredFactories, resolvePluginsDir } from "./discover.js";
+import { EchoPlugin } from "./builtins/echo.js";
+import { WeatherPlugin } from "./builtins/weather.js";
 
-const STATIC_FACTORIES: Record<string, McpPluginFactory> = {};
+/** Always-available in-process plugins (compiled into core image). */
+const STATIC_FACTORIES: Record<string, McpPluginFactory> = {
+  echo: () => new EchoPlugin(),
+  weather: () => new WeatherPlugin(),
+};
 
 export let PLUGIN_FACTORIES: Record<string, McpPluginFactory> = {
   ...STATIC_FACTORIES,
@@ -22,6 +28,7 @@ export async function ensurePluginDiscovery(): Promise<void> {
 
 /**
  * Re-scan PLUGINS_DIR and rebuild factories without process restart.
+ * Discovered plugins override static ones with the same id.
  */
 export async function reloadPluginDiscovery(): Promise<{
   epoch: number;
@@ -41,6 +48,7 @@ export async function reloadPluginDiscovery(): Promise<{
     try {
       const gen = Date.now();
       const discovered = await buildDiscoveredFactories(dir, gen);
+      // Static first, then disk plugins (disk wins on id clash)
       PLUGIN_FACTORIES = { ...STATIC_FACTORIES, ...discovered };
       discoveryEpoch += 1;
       discoveryDone = true;
@@ -51,9 +59,7 @@ export async function reloadPluginDiscovery(): Promise<{
       );
     } catch (err) {
       console.error("[plugins] Discovery failed:", err);
-      if (Object.keys(PLUGIN_FACTORIES).length === 0) {
-        PLUGIN_FACTORIES = { ...STATIC_FACTORIES };
-      }
+      PLUGIN_FACTORIES = { ...STATIC_FACTORIES };
       discoveryDone = true;
     } finally {
       discoveryInFlight = null;
