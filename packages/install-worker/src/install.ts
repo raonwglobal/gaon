@@ -34,6 +34,7 @@ export interface InstallResult {
   path?: string;
   detail?: string;
   signatureOk?: boolean;
+  meta?: Record<string, unknown>;
 }
 
 function formatExecError(err: unknown, cmd: string): string {
@@ -72,6 +73,89 @@ async function run(cmd: string, args: string[], cwd?: string): Promise<string> {
 function assertWritable(dir: string): void {
   mkdirSync(dir, { recursive: true });
   accessSync(dir, constants.W_OK);
+}
+
+/**
+ * After clone/npm: install deps, build if needed, write plugin.meta.json for Core stdio bridge.
+ */
+async function prepareExternalRuntime(
+  id: string,
+  target: string
+): Promise<Record<string, unknown>> {
+  const pkgPath = join(target, "package.json");
+  const hasPkg = existsSync(pkgPath);
+  const hasServerPy = existsSync(join(target, "server.py"));
+
+  if (hasPkg) {
+    try {
+      await run(
+        "npm",
+        ["install", "--no-audit", "--no-fund"],
+        target
+      );
+    } catch (err) {
+      // non-fatal for pure source trees; log via detail later
+      console.warn("[install] npm install:", err);
+    }
+    try {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+        scripts?: Record<string, string>;
+      };
+      if (pkg.scripts?.build) {
+        await run("npm", ["run", "build"], target);
+      }
+    } catch (err) {
+      console.warn("[install] npm run build:", err);
+    }
+  }
+
+  if (hasServerPy) {
+    const meta = {
+      id,
+      runtime: "stdio",
+      command: process.env.PYTHON_BIN || "python3",
+      args: ["server.py"],
+      description: "Python MCP server (stdio)",
+    };
+    writeFileSync(join(target, "plugin.meta.json"), JSON.stringify(meta, null, 2));
+    return meta;
+  }
+
+  if (hasPkg) {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+      main?: string;
+      bin?: string | Record<string, string>;
+    };
+    let entry =
+      typeof pkg.main === "string"
+        ? pkg.main
+        : typeof pkg.bin === "string"
+          ? pkg.bin
+          : pkg.bin && typeof pkg.bin === "object"
+            ? Object.values(pkg.bin)[0]
+            : undefined;
+    if (!entry || !existsSync(join(target, entry))) {
+      if (existsSync(join(target, "dist", "index.js"))) entry = "dist/index.js";
+      else if (existsSync(join(target, "index.js"))) entry = "index.js";
+    }
+    if (entry && existsSync(join(target, entry))) {
+      const meta = {
+        id,
+        runtime: "stdio",
+        command: "node",
+        args: [entry],
+        description: `Node MCP server (stdio) entry=${entry}`,
+      };
+      writeFileSync(
+        join(target, "plugin.meta.json"),
+        JSON.stringify(meta, null, 2)
+      );
+      return meta;
+    }
+  }
+
+  // Class-style inprocess plugin — no meta required
+  return { id, runtime: "inprocess" };
 }
 
 export async function installPlugin(
@@ -182,6 +266,8 @@ export async function installPlugin(
       }
     }
 
+    const meta = await prepareExternalRuntime(id, target);
+
     let signatureOk: boolean | undefined;
     try {
       signatureOk = verifyPluginSignature(target);
@@ -201,7 +287,7 @@ export async function installPlugin(
       signatureOk = false;
     }
 
-    return { ok: true, path: target, signatureOk };
+    return { ok: true, path: target, signatureOk, meta };
   } catch (err) {
     try {
       if (existsSync(target)) rmSync(target, { recursive: true, force: true });
