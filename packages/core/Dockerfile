@@ -18,6 +18,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV PLUGINS_DIR=/app/plugins
+ENV PYTHON_BIN=python3
+
+# External MCP bridges (e.g. kbsec-mcp) need a Python runtime in-process via stdio
+RUN apk add --no-cache python3 py3-pip \
+  && ln -sf python3 /usr/bin/python || true
 
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/dist ./dist
