@@ -77,6 +77,7 @@ function assertWritable(dir: string): void {
 
 /**
  * After clone/npm: install deps, build if needed, write plugin.meta.json for Core stdio bridge.
+ * Python plugins use a local .venv (PEP 668 forbids system pip).
  */
 async function prepareExternalRuntime(
   id: string,
@@ -85,16 +86,12 @@ async function prepareExternalRuntime(
   const pkgPath = join(target, "package.json");
   const hasPkg = existsSync(pkgPath);
   const hasServerPy = existsSync(join(target, "server.py"));
+  const reqPath = join(target, "requirements.txt");
 
   if (hasPkg) {
     try {
-      await run(
-        "npm",
-        ["install", "--no-audit", "--no-fund"],
-        target
-      );
+      await run("npm", ["install", "--no-audit", "--no-fund"], target);
     } catch (err) {
-      // non-fatal for pure source trees; log via detail later
       console.warn("[install] npm install:", err);
     }
     try {
@@ -110,12 +107,27 @@ async function prepareExternalRuntime(
   }
 
   if (hasServerPy) {
+    const venvDir = join(target, ".venv");
+    const venvPython = join(venvDir, "bin", "python");
+    const py = process.env.PYTHON_BIN || "python3";
+    try {
+      if (!existsSync(venvPython)) {
+        await run(py, ["-m", "venv", venvDir]);
+      }
+      await run(venvPython, ["-m", "pip", "install", "-U", "pip"]);
+      if (existsSync(reqPath)) {
+        await run(venvPython, ["-m", "pip", "install", "-r", reqPath]);
+      }
+    } catch (err) {
+      console.warn("[install] python venv:", err);
+    }
+    const command = existsSync(venvPython) ? venvPython : py;
     const meta = {
       id,
       runtime: "stdio",
-      command: process.env.PYTHON_BIN || "python3",
+      command,
       args: ["server.py"],
-      description: "Python MCP server (stdio)",
+      description: "Python MCP server (stdio/venv)",
     };
     writeFileSync(join(target, "plugin.meta.json"), JSON.stringify(meta, null, 2));
     return meta;
@@ -154,7 +166,6 @@ async function prepareExternalRuntime(
     }
   }
 
-  // Class-style inprocess plugin — no meta required
   return { id, runtime: "inprocess" };
 }
 
