@@ -11,6 +11,7 @@ import { handleUsers } from "./routes/users.js";
 import { handleVault } from "./routes/vault.js";
 import { handleAudit } from "./routes/audit.js";
 import { handleInternalVault } from "./routes/internal-vault.js";
+import { handleInternalSync } from "./routes/internal-sync.js";
 import { syncAllToCore } from "./core-sync.js";
 import {
   isAuthDisabled,
@@ -42,7 +43,7 @@ function applyCors(req: IncomingMessage, res: ServerResponse): void {
   );
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Admin-Token"
+    "Content-Type, Authorization, X-Admin-Token, X-Internal-Token"
   );
 }
 
@@ -76,6 +77,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // Service-to-service (Core bootstrap) — before user session auth
+  if (await handleInternalSync(req, res, pathname)) return;
   if (await handleInternalVault(req, res, pathname)) return;
   if (await handleAuth(req, res, pathname)) return;
 
@@ -110,7 +113,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (await handleConfig(req, res, pathname, auth)) return;
   if (await handleMetrics(req, res, pathname)) return;
   if (await handleLogs(req, res, pathname)) return;
-  if (await handleCatalog(req, res, pathname)) return;
+  if (await handleCatalog(req, res, pathname, auth)) return;
 
   json(res, 404, { error: "Not found" });
 });
@@ -125,5 +128,16 @@ server.listen(PORT, () => {
     console.log(
       `Users: ${userStore.list().length} (bootstrap via BOOTSTRAP_ADMIN_PASSWORD)`
     );
+  }
+  // Best-effort push when CP starts after Core (Core also pulls on its boot)
+  if (process.env.SYNC_ON_START !== "false") {
+    void syncAllToCore().then((r) => {
+      const ok = r.plugins.ok && r.config.ok;
+      console.log(
+        ok
+          ? "[sync] startup push to Core ok"
+          : `[sync] startup push failed plugins=${r.plugins.detail || r.plugins.ok} config=${r.config.detail || r.config.ok}`
+      );
+    });
   }
 });
