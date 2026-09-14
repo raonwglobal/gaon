@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type {
@@ -41,19 +43,47 @@ export class ExternalMcpServerPlugin implements McpPlugin {
         `ExternalMcpServerPlugin only supports runtime=stdio (got ${this.meta.runtime})`
       );
     }
-    const command = this.meta.command || "node";
+    const command =
+      this.meta.command ||
+      (process.env.PYTHON_BIN && this.meta.id.includes("kb")
+        ? process.env.PYTHON_BIN
+        : "node");
     const args = this.meta.args || ["dist/index.js"];
     const cwd = this.meta.cwd
       ? this.meta.cwd.startsWith("/")
         ? this.meta.cwd
-        : `${this.pluginDir}/${this.meta.cwd}`
+        : join(this.pluginDir, this.meta.cwd)
       : this.pluginDir;
+
+    // Resolve first script arg relative to cwd when not absolute
+    const resolvedArgs = args.map((a, i) => {
+      if (i === 0 && !a.startsWith("/") && existsSync(join(cwd, a))) {
+        return join(cwd, a);
+      }
+      return a;
+    });
+
+    const entryHint = resolvedArgs[0] || "";
+    if (
+      entryHint.endsWith(".js") ||
+      entryHint.endsWith(".mjs") ||
+      entryHint.endsWith(".py")
+    ) {
+      const entryPath = entryHint.startsWith("/")
+        ? entryHint
+        : join(cwd, entryHint);
+      if (!existsSync(entryPath)) {
+        throw new Error(
+          `External MCP entry not found: ${entryPath} (plugin=${this.meta.id}). ` +
+            `Run npm run build or pip install in the plugin directory.`
+        );
+      }
+    }
 
     const env: Record<string, string> = {
       ...(process.env as Record<string, string>),
       ...(this.meta.env || {}),
     };
-    // Session/plugin config secrets override
     for (const [k, v] of Object.entries(config)) {
       if (typeof v === "string") env[k] = v;
     }
@@ -65,7 +95,7 @@ export class ExternalMcpServerPlugin implements McpPlugin {
 
     this.transport = new StdioClientTransport({
       command,
-      args,
+      args: resolvedArgs,
       cwd,
       env,
       stderr: "pipe",
@@ -79,21 +109,41 @@ export class ExternalMcpServerPlugin implements McpPlugin {
     logger.info("external MCP bridge starting", {
       id: this.meta.id,
       command,
-      args,
+      args: resolvedArgs,
       cwd,
     });
 
-    await this.client.connect(this.transport);
-
-    const listed = await this.client.listTools();
-    this.tools = (listed.tools || []).map((t) => ({
-      name: t.name,
-      description: t.description || t.name,
-      inputSchema: (t.inputSchema || {
-        type: "object",
-        properties: {},
-      }) as Record<string, unknown>,
-    }));
+    try {
+      await this.client.connect(this.transport);
+      const listed = await this.client.listTools();
+      this.tools = (listed.tools || []).map((t) => ({
+        name: t.name,
+        description: t.description || t.name,
+        inputSchema: (t.inputSchema || {
+          type: "object",
+          properties: {},
+        }) as Record<string, unknown>,
+      }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error("external MCP bridge failed", {
+        id: this.meta.id,
+        command,
+        args: resolvedArgs,
+        cwd,
+        error: msg,
+      });
+      try {
+        await this.client?.close();
+      } catch {
+        /* ignore */
+      }
+      this.client = null;
+      this.transport = null;
+      throw new Error(
+        `External MCP ${this.meta.id} failed (${command} ${resolvedArgs.join(" ")} in ${cwd}): ${msg}`
+      );
+    }
 
     logger.info("external MCP bridge ready", {
       id: this.meta.id,
@@ -118,7 +168,7 @@ export class ExternalMcpServerPlugin implements McpPlugin {
         arguments: ctx.arguments,
       });
       const content = Array.isArray((result as { content?: unknown }).content)
-        ? ((result as { content: ToolCallResult["content"] }).content)
+        ? (result as { content: ToolCallResult["content"] }).content
         : [
             {
               type: "text" as const,
