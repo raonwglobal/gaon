@@ -13,6 +13,7 @@ import { metrics } from "../metrics.js";
 import { logger } from "../logger.js";
 import type { SecretMap } from "../session-secrets.js";
 import { createUpstreamFetch } from "../session-secrets.js";
+import { setPluginLoadReport } from "../runtime-state.js";
 
 export interface PluginManagerOptions {
   sessionId: string;
@@ -39,17 +40,32 @@ export class PluginManager {
     ids: string[],
     configs: Record<string, Record<string, unknown>> = {}
   ): Promise<void> {
+    const loaded: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+
     for (const id of ids) {
       try {
         const plugin = await createPlugin(id);
         await plugin.initialize(configs[id] ?? {});
         this.plugins.push(plugin);
+        loaded.push(id);
         logger.info("plugin loaded", { id, sessionId: this.opts.sessionId });
       } catch (err) {
-        logger.error("plugin load failed", { id, error: String(err) });
+        const error = err instanceof Error ? err.message : String(err);
+        failed.push({ id, error });
+        logger.error("plugin load failed", {
+          id,
+          error,
+          sessionId: this.opts.sessionId,
+        });
       }
     }
     await this.rebuildToolIndex();
+    setPluginLoadReport({
+      loaded,
+      failed,
+      tools: this.getToolNames(),
+    });
   }
 
   async rebuildToolIndex(): Promise<void> {
