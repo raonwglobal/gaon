@@ -11,3 +11,4 @@ coverage/
 .vite/
 *.tsbuildinfo
 plugins/.runtime/
+.wiki-compiler/
