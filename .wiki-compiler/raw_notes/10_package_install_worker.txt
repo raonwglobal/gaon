@@ -1,0 +1,14 @@
+# Install Worker
+created: 2026-09-15
+aliases: install-worker, packages/install-worker, @gaon/install-worker
+
+Code location: packages/install-worker.
+npm name: @gaon/install-worker.
+Source files scanned: 4.
+Install Worker is part of Gaon Platform.
+Notable exports: assertGitRefAllowed, resolveInstallDir, InstallRequest, InstallResult, installPlugin, verifyPluginSignature, computePluginSignature.
+Top-level src: git-allowlist.ts, index.ts, install.ts, signature.ts.
+Code couples to: Install Worker.
+Sibling packages: Control Plane, Core, Dashboard, Plugin Runtime.
+Docker Compose services: install-worker, plugin-runtime, control-plane, core, dashboard.
+CI under GitHub Actions.

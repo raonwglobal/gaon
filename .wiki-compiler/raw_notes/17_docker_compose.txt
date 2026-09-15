@@ -1,9 +1,0 @@
-# Docker Compose
-created: 2026-09-15
-aliases: compose, podman-compose
-
-Docker Compose defines Core, Control Plane, Dashboard, Install Worker, and optional Plugin Runtime services with shared tokens and volumes.
-Important env: CONTROL_URL, CORE_URL, INTERNAL_TOKEN, PLUGINS_DIR, PLUGIN_RUNTIME, AUTH_DISABLED.
-
-Plugins volume mounts host plugin trees into Core and Install Worker. Read-only mounts block venv creation for Python External MCP Plugins.
-Related: Core, Control Plane, Install Worker, Plugin Runtime, Gaon Platform.

@@ -1,0 +1,8 @@
+# Plugin Runtime
+created: 2026-09-15
+aliases: plugin-runtime, docs/plugin-runtime.md
+
+Documentation file: docs/plugin-runtime.md.
+Plugin Runtime documents Gaon Platform.
+References packages: Core, Plugin Runtime.
+Excerpt: | Env | Values | Behavior | |-----|--------|----------| | `PLUGIN_RUNTIME` | `inprocess` (default), `container` | In-process factories vs Catalog HTTP routing | | `ORCHESTRATOR` | `endpoint` (default), `docker`, `k8s` | How `/catalog/deploy` starts plugins | ```http GET  /health

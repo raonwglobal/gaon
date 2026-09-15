@@ -1,0 +1,11 @@
+# Echo Plugin
+created: 2026-09-15
+aliases: echo, plugins/echo
+
+Code location: plugins/echo.
+Echo Plugin is an in-repo plugin under Gaon Platform.
+Files scanned: 2.
+Loaded via Core.
+Loaded via Control Plane.
+Loaded via Install Worker.
+See Plugin Development Guide for extension standards.

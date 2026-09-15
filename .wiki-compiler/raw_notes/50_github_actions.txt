@@ -1,0 +1,7 @@
+# GitHub Actions
+created: 2026-09-15
+aliases: CI, workflows
+
+Workflows under .github/workflows for Gaon Platform.
+Files: wiki-compiler.yml, docker-images.yml, commit-lockfile.yml.
+Packages: Control Plane, Core, Dashboard, Install Worker, Plugin Runtime.

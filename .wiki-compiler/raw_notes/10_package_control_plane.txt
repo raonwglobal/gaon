@@ -1,0 +1,14 @@
+# Control Plane
+created: 2026-09-15
+aliases: control-plane, packages/control-plane, @mcp-sse/control-plane
+
+Code location: packages/control-plane.
+npm name: @mcp-sse/control-plane.
+Source files scanned: 24.
+Control Plane is part of Gaon Platform.
+Notable exports: PluginRegistry, registry, resolveInstallDir, InstallRequest, InstallResult, installPlugin, PluginRecord, PlatformConfig, maskConfig, store, syncPluginsToCore, syncConfigToCore, syncAllToCore, installViaWorker, handleMetrics, handleInternalVault, handleInternalSync, handleCatalog, handleSessions, handleConfig.
+Top-level src: auth, core-sync.ts, index.ts, install-worker-client.ts, plugin-installer.ts, registry.ts, routes, security, store.ts.
+Code couples to: Control Plane.
+Sibling packages: Core, Dashboard, Install Worker, Plugin Runtime.
+Docker Compose services: install-worker, plugin-runtime, control-plane, core, dashboard.
+CI under GitHub Actions.

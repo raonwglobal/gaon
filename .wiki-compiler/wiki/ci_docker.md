@@ -1,0 +1,25 @@
+# Ci Docker
+
+## Metadata
+- created: 2026-09-15
+- aliases: ci-docker, docs/ci-docker.md
+- source: /home/runner/work/gaon/gaon/.wiki-compiler/raw_notes/30_doc_ci_docker.txt
+
+## Related
+- [[Control Plane]]
+- [[Core]]
+- [[Dashboard]]
+- [[Gaon Platform]]
+- [[Plugin Runtime]]
+
+## Referenced By
+- [[Gaon Platform]]
+
+## Body
+Documentation file: docs/ci-docker.md.
+Ci Docker documents Gaon Platform.
+References packages: Core, Dashboard.
+Excerpt: Workflow: `.github/workflows/docker-images.yml` Builds and pushes (on `main` / tags): - `ghcr.io/<owner>/<repo>/core` - `ghcr.io/<owner>/<repo>/control-plane` - `ghcr.io/<owner>/<repo>/dashboard` - `ghcr.io/<owner>/<repo>/plugin-runtime`
+
+## Notes
+_(add your own notes here -- preserved on recompile)_

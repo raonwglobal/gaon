@@ -1,9 +1,0 @@
-# Security
-created: 2026-09-15
-aliases: auth, gateway auth, INTERNAL_TOKEN
-
-Security covers gateway authentication on Core, Control Plane user sessions, CORS, rate limits, and INTERNAL_TOKEN for service calls.
-Open access mode sets AUTH_DISABLED for development only and must not be used on untrusted networks.
-
-Vault can inject per-user secrets into Session at connect time when INTERNAL_TOKEN is configured.
-Related: Core, Control Plane, Session, Dashboard.

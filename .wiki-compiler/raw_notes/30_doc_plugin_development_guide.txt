@@ -1,0 +1,8 @@
+# Plugin Development Guide
+created: 2026-09-15
+aliases: plugin-development-guide, docs/plugin-development-guide.md
+
+Documentation file: docs/plugin-development-guide.md.
+Plugin Development Guide documents Gaon Platform.
+References packages: Control Plane, Core.
+Excerpt: 신규 플러그인을 **동일한 포맷·생명주기·운영 규칙**으로 개발·배포·관리하기 위한 표준 문서입니다. 특정 증권사·벤더에 종속되지 않으며, 내부 도구·외부 API·데이터 연동 등 모든 신규 MCP 플러그인에 적용합니다. | 항목 | 표준 | |------|------| | 전송 | MCP over **stdio** | | 언어/런타임 | **TypeScript → Node.js ≥ 20** (`dist/index.js`) |

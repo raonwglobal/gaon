@@ -1,0 +1,14 @@
+# Core
+created: 2026-09-15
+aliases: core, packages/core, @mcp-sse/core
+
+Code location: packages/core.
+npm name: @mcp-sse/core.
+Source files scanned: 42.
+Core is part of Gaon Platform.
+Notable exports: ToolMetric, MetricsSnapshot, metrics, SessionInitOptions, McpSession, LogLevel, LogEntry, logger, ServerConfig, loadConfig, BootstrapResult, bootstrapFromControlPlane, SecretMap, createSessionSecrets, parseSessionSecretsHeader, parsePluginScopeHeader, createUpstreamFetch, clearSecrets, SessionListItem, SessionManager.
+Top-level src: bootstrap-control-plane.ts, cluster, config.ts, index.ts, logger.ts, metrics.test.ts, metrics.ts, plugins, runtime, runtime-state.test.ts, runtime-state.ts, security, server-catalog-routes.ts, server.ts, session-manager.ts.
+Code couples to: Core.
+Sibling packages: Control Plane, Dashboard, Install Worker, Plugin Runtime.
+Docker Compose services: install-worker, plugin-runtime, control-plane, core, dashboard.
+CI under GitHub Actions.

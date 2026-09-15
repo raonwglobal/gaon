@@ -1,0 +1,12 @@
+# Plugin Runtime
+created: 2026-09-15
+aliases: plugin-runtime, packages/plugin-runtime, @mcp-sse/plugin-runtime
+
+Code location: packages/plugin-runtime.
+npm name: @mcp-sse/plugin-runtime.
+Source files scanned: 1.
+Plugin Runtime is part of Gaon Platform.
+Top-level src: server.ts.
+Sibling packages: Control Plane, Core, Dashboard, Install Worker.
+Docker Compose services: install-worker, plugin-runtime, control-plane, core, dashboard.
+CI under GitHub Actions.

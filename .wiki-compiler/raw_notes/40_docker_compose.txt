@@ -1,0 +1,8 @@
+# Docker Compose
+created: 2026-09-15
+aliases: compose, docker-compose.yml
+
+File: docker-compose.yml.
+Docker Compose topology for Gaon Platform.
+Services: install-worker, plugin-runtime, control-plane, core, dashboard.
+Packages: Control Plane, Core, Dashboard, Install Worker, Plugin Runtime.

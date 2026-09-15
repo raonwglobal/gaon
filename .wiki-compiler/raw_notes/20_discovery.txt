@@ -1,9 +1,0 @@
-# Discovery
-created: 2026-09-15
-aliases: plugin discovery, buildDiscoveredFactories
-
-Discovery scans PLUGINS_DIR for Plugin Meta stdio plugins or class-based index modules and builds factories keyed by plugin id.
-Built-in plugins such as weather and echo register as static factories alongside discovered ones.
-
-Reload increments discoveryEpoch and rebuilds factories so updated code on disk can load without full process restart when supported.
-Related: Core, Plugin Manager, Plugin Meta, Stdio Bridge, Install Worker.

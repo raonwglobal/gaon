@@ -1,9 +1,0 @@
-# Session Manager
-created: 2026-09-15
-aliases: SessionManager, sessions
-
-Session Manager tracks active MCP SSE sessions in Core: create, idle timeout, max sessions, and shutdown.
-Each session has an id matching SSEServerTransport.sessionId advertised in the endpoint event.
-
-When plugins are synced, Session Manager can reload tools on open sessions without forcing clients to reconnect.
-Closely tied to Session, SSE Session Factory, and Plugin Manager.

@@ -1,0 +1,8 @@
+# Prd
+created: 2026-09-15
+aliases: prd, docs/prd.md
+
+Documentation file: docs/prd.md.
+Prd documents Gaon Platform.
+References packages: Core.
+Excerpt: 이 문서는 MCP over SSE (Server-Sent Events) 서버 기능을 독립적으로 구축, 재구축 또는 다른 프로젝트에 이식할 수 있도록 설계된 기술 명세서입니다. > **버전**: 0.2.0 (2026-08-26) > **이전 버전 대비 주요 변경**: 타입 안정성 개선, 세션 타임아웃, 보안 인터페이스, transport 접근 제어 수정, 에러 처리 개선 본 모듈은 표준 MCP 프로토콜을 HTTP/SSE 전송 계층 위에서 동작하도록 구현한 서버 코어입니다. 기존의 stdio 방식과 달리, 네트워크 기반의 다중 클라이언트 연결, 세션 격리, 동적 플러그인 로딩을 지원합니다. - **전송 계층**: HTTP POST (Client→Server) + SSE (Server→Client) - **아키텍
