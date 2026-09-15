@@ -3,10 +3,21 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 export PYTHONPATH="$ROOT/bin${PYTHONPATH:+:$PYTHONPATH}"
+mkdir -p "$ROOT/bin"
+
+# Ensure wiki-compiler stages exist (vendored or fetched)
+for f in compiler extractor graph linter rewriter; do
+  if [[ ! -f "$ROOT/bin/${f}.py" ]]; then
+    curl -fsSL "https://raw.githubusercontent.com/Emmimal/wiki-compiler/main/${f}.py" -o "$ROOT/bin/${f}.py"
+  fi
+done
+# Prefer compile_pages API
+if grep -q 'write_all' "$ROOT/bin/compiler.py" 2>/dev/null; then
+  sed -i 's/from rewriter import write_all/from rewriter import compile_pages/;s/write_all(/compile_pages(/g' "$ROOT/bin/compiler.py"
+fi
 
 python3 "$ROOT/scripts/sync_from_code.py"
 
-# Drop stale pages from previous corpus (code-derived set is authoritative)
 mkdir -p "$ROOT/wiki"
 find "$ROOT/wiki" -maxdepth 1 -type f -name '*.md' -delete
 
