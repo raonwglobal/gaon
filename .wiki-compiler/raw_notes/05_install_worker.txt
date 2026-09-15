@@ -1,0 +1,11 @@
+# Install Worker
+created: 2026-09-15
+aliases: install-worker, Plugin Installer
+
+Install Worker is packages/install-worker, default port 3002.
+It clones git repositories or installs npm packages into PLUGINS_DIR, runs npm install and build for Node plugins, and writes plugin.meta.json for Stdio Bridge.
+
+Python plugins get a local .venv because system pip is blocked by PEP 668.
+The worker is isolated so Core images do not need git at runtime. Control Plane calls the worker when INSTALL_WORKER_URL is set.
+
+Related: Control Plane, Core, Plugin Development Guide, External MCP Plugins.

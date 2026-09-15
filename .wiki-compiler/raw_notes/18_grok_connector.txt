@@ -1,0 +1,11 @@
+# Grok Connector
+created: 2026-09-15
+aliases: Grok MCP, connector
+
+Grok Connector connects to Core via the public SSE URL such as https://host/sse and discovers tools from tools/list.
+If the connector catalog was cached while Core enabled only built-ins, tools may not match current Registry plugins.
+
+After changing enabled plugins or Sync Lifecycle, reconnect the connector and start a new chat.
+Unknown tool errors usually mean catalog versus Session tool map mismatch, not necessarily a Core crash.
+
+Related: Core, Session, Sync Lifecycle, Plugin Manager, Gaon Platform.

@@ -1,0 +1,11 @@
+# Plugin Manager
+created: 2026-09-15
+aliases: PluginManager
+
+Plugin Manager loads plugin factories by id, initializes them, builds a qualified tool index, and handles tools/list and tools/call.
+Load outcomes are written to loadReport: loaded, failed, tools, updatedAt for Core health visibility.
+
+Failures such as missing python or Connection closed on external MCP appear in failed entries without taking down the whole Session.
+Related: Plugin Development Guide, Stdio Bridge, Session, Core.
+
+Discovery rebuilds factories after Install Worker updates the plugins directory.

@@ -1,0 +1,9 @@
+# Runtime State
+created: 2026-09-15
+aliases: runtimeState, runtime-state
+
+Runtime State is in-memory Core state: enabledPlugins, pluginConfigs, pluginOwners, platform config, and loadReport.
+Control Plane updates it via PUT /internal/plugins and PUT /internal/config protected by INTERNAL_TOKEN.
+
+Session plugin resolution uses Runtime State plus optional X-Enabled-Plugins scope and ownership rules.
+Related: Core, Control Plane, Sync Lifecycle, Session, Plugin Manager.

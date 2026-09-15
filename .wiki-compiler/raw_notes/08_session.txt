@@ -1,0 +1,9 @@
+# Session
+created: 2026-09-15
+aliases: McpSession, SSE Session
+
+A Session binds one SSE transport to one MCP Server instance and a Plugin Manager (or remote manager).
+Initialization resolves enabled plugins from Runtime State, optional scope headers, and vault secrets from Control Plane.
+
+Session loads plugins, registers tools, then connects the transport. Tool list changes can notify clients after reload.
+Related: Session Manager, Core, Plugin Manager, Stdio Bridge.

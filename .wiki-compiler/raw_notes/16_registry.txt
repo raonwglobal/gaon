@@ -1,0 +1,9 @@
+# Registry
+created: 2026-09-15
+aliases: plugin registry, platform.json
+
+Registry is the Control Plane source of truth for installed plugins, stored typically in platform.json under control data volume.
+Register, enable, and config changes trigger Sync Lifecycle toward Core.
+
+Dashboard and APIs mutate Registry; Core never writes Registry itself.
+Related: Control Plane, Dashboard, Install Worker, Sync Lifecycle.
