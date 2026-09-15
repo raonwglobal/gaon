@@ -11,4 +11,7 @@ coverage/
 .vite/
 *.tsbuildinfo
 plugins/.runtime/
-.wiki-compiler/
+
+# wiki-compiler: keep scripts/bin/README tracked; ignore generated corpus
+.wiki-compiler/raw_notes/
+.wiki-compiler/wiki/
