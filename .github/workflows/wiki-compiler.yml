@@ -1,0 +1,63 @@
+name: Wiki Compiler
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/**"
+      - "plugins/**"
+      - "docs/**"
+      - "docker-compose.yml"
+      - "package.json"
+      - "PLATFORM.md"
+      - "README.md"
+      - "README.ko.md"
+      - ".wiki-compiler/scripts/**"
+      - ".wiki-compiler/bin/**"
+      - ".wiki-compiler/compile.sh"
+      - ".github/workflows/wiki-compiler.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-compiler-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Sync notes from code and compile wiki
+        run: |
+          chmod +x .wiki-compiler/compile.sh
+          bash .wiki-compiler/compile.sh
+
+      - name: Detect changes
+        id: diff
+        run: |
+          git add .wiki-compiler/raw_notes .wiki-compiler/wiki
+          if git diff --staged --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit wiki update
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(wiki): refresh code-derived wiki [skip ci]"
+          git push
