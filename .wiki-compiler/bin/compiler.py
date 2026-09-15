@@ -2,22 +2,20 @@
 compiler.py
 
 Single entry point: raw_dir -> extract -> graph -> compiled markdown -> lint.
-This is the "compile" step referenced throughout the project.
 """
 
 import argparse
-import os
 
 from extractor import extract_all
 from graph import build_graph
-from rewriter import write_all
+from rewriter import compile_pages
 from linter import lint, print_report
 
 
 def compile_wiki(raw_dir: str, output_dir: str, run_lint: bool = True) -> dict:
     entities = extract_all(raw_dir)
     graph = build_graph(entities)
-    written = write_all(entities, graph, output_dir)
+    written = compile_pages(entities, graph, output_dir)
 
     report = None
     if run_lint:
