@@ -1,0 +1,11 @@
+# Stdio Bridge
+created: 2026-09-15
+aliases: ExternalMcpServerPlugin, stdio bridge, External MCP Bridge
+
+Stdio Bridge wraps a full MCP server child process as a gaon in-process plugin.
+It reads plugin.meta.json for command, args, cwd, and env, spawns the process, and proxies listTools and callTool over stdio.
+
+This is the standard way to run Node MCP servers such as independent tool packages and optional Python servers with a venv.
+Connection closed usually means the child exited early, often due to missing required environment variables.
+
+Related: Plugin Development Guide, External MCP Plugins, Install Worker, Plugin Manager, Core.

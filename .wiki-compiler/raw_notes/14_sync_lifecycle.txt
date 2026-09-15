@@ -1,0 +1,11 @@
+# Sync Lifecycle
+created: 2026-09-15
+aliases: sync, plugin sync, bootstrap
+
+Sync Lifecycle keeps Control Plane registry state aligned with Core Runtime State.
+POST /api/sync on Control Plane and POST /internal/sync for service bootstrap push enabled plugins and config to Core.
+
+Core also requests bootstrap on startup with retries so order of container start does not leave Core stuck on env defaults only.
+Reload rediscovers factories from disk but does not replace the enabled list; enable changes always need sync.
+
+Related: Control Plane, Core, Dashboard, Registry, Runtime State.

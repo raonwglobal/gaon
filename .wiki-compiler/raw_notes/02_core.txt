@@ -1,0 +1,16 @@
+# Core
+created: 2026-09-15
+aliases: mcp-sse-core, Data Plane, Core Gateway
+
+Core is the MCP SSE data plane package under packages/core.
+It exposes GET /sse and POST /message, manages sessions via Session Manager, and loads plugins through Plugin Manager.
+
+On startup Core runs bootstrap from Control Plane using CONTROL_URL and INTERNAL_TOKEN so enabled plugins stay in sync after restart.
+Health endpoint reports plugins, loadReport with loaded failed tools, and discoveryEpoch.
+
+Core supports inprocess McpPlugin classes and external servers via Stdio Bridge using plugin.meta.json.
+Security modules cover CORS, gateway auth, and rate limiting. Runtime state holds enabled plugins and platform config pushed by Control Plane.
+
+Depends on: Control Plane (sync), Install Worker (plugin files on disk), Plugin Development Guide.
+
+Discovery rebuilds factories after Install Worker updates the plugins directory.

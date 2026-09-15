@@ -1,0 +1,13 @@
+# Gaon Platform
+created: 2026-09-15
+aliases: Gaon, MCP SSE Platform, gaon
+
+Gaon is a universal MCP over SSE server with a plugin system and admin dashboard.
+It loads multiple MCP tools as plugins, manages them from a web dashboard, and serves them over HTTP and Server-Sent Events.
+
+The platform is split into management and data planes. Management is handled by the Control Plane and Dashboard.
+The data plane is the Core MCP SSE Gateway. Plugin installation is isolated in the Install Worker.
+
+Related components: Core, Control Plane, Dashboard, Install Worker, Plugin Runtime.
+Operational concerns include Docker Compose, Sync Lifecycle, and Grok Connector integration.
+See also Plugin Development Guide and Stdio Bridge for external plugins.

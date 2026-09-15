@@ -1,0 +1,12 @@
+# Control Plane
+created: 2026-09-15
+aliases: control-plane, Management API
+
+Control Plane is packages/control-plane, default port 3001.
+It owns the plugin registry, platform.json persistence, user auth, vault, and management APIs used by the Dashboard.
+
+Key operations: install plugins via Install Worker, enable disable plugins, push config, and Sync Lifecycle to Core.
+Internal endpoints include POST /internal/sync for Core bootstrap and vault session secrets for Core.
+
+CORE_URL and INTERNAL_TOKEN must match Core. AUTH_DISABLED enables open access for development.
+Related: Dashboard, Core, Install Worker, Registry, Sync Lifecycle.
