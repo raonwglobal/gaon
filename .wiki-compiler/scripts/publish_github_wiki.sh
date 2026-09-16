@@ -1,70 +1,80 @@
 #!/usr/bin/env bash
 # Publish .wiki-compiler/wiki/*.md to the official GitHub Wiki (*.wiki.git).
-# Requires: Wikis enabled on the repository; GITHUB_TOKEN or GH_TOKEN with push access.
+#
+# Requirements:
+#   - Settings → Features → Wikis enabled
+#   - Ideally secrets.WIKI_TOKEN (PAT with contents:write on this repo).
+#     Default GITHUB_TOKEN frequently cannot push to *.wiki.git.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="$ROOT/.wiki-compiler/wiki"
-OWNER="${GITHUB_REPOSITORY_OWNER:-${GITHUB_REPOSITORY%%/*}}"
-REPO="${GITHUB_REPOSITORY##*/}"
+OWNER="${GITHUB_REPOSITORY_OWNER:-}"
+REPO="${GITHUB_REPOSITORY:-}"
+if [[ -n "$REPO" && "$REPO" == */* ]]; then
+  OWNER="${OWNER:-${REPO%%/*}}"
+  REPO="${REPO##*/}"
+fi
+OWNER="${OWNER:-raonwglobal}"
+REPO="${REPO:-gaon}"
 TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
-if [[ -z "${GITHUB_REPOSITORY:-}" ]]; then
-  # Local fallback when run outside Actions
-  OWNER="${OWNER:-raonwglobal}"
-  REPO="${REPO:-gaon}"
-fi
-
 if [[ -z "$TOKEN" ]]; then
-  echo "::error::No GH_TOKEN / GITHUB_TOKEN; cannot push to wiki"
+  echo "::error::No GH_TOKEN / GITHUB_TOKEN / WIKI_TOKEN"
   exit 1
 fi
 
-if [[ ! -d "$SRC" ]] || [[ -z "$(find "$SRC" -maxdepth 1 -name '*.md' 2>/dev/null | head -1)" ]]; then
-  echo "::error::No compiled pages under $SRC — run compile.sh first"
+if [[ ! -d "$SRC" ]]; then
+  echo "::error::Missing $SRC — run compile.sh first"
   exit 1
 fi
+mapfile -t PAGES < <(find "$SRC" -maxdepth 1 -type f -name '*.md' | sort)
+if [[ ${#PAGES[@]} -eq 0 ]]; then
+  echo "::error::No .md pages under $SRC"
+  exit 1
+fi
+echo "Publishing ${#PAGES[@]} pages from $SRC"
 
 WIKI_URL="https://x-access-token:${TOKEN}@github.com/${OWNER}/${REPO}.wiki.git"
 WORKDIR="$(mktemp -d)"
 cleanup() { rm -rf "$WORKDIR"; }
 trap cleanup EXIT
 
-echo "Cloning wiki for ${OWNER}/${REPO}..."
-if ! git clone --depth 1 "$WIKI_URL" "$WORKDIR/wiki" 2>"$WORKDIR/clone.err"; then
-  echo "::error::Could not clone ${OWNER}/${REPO}.wiki.git"
-  echo "Enable Settings → Features → Wikis, create the first page in the Wiki tab, then re-run."
+clone_ok=0
+if git clone --depth 1 "$WIKI_URL" "$WORKDIR/wiki" 2>"$WORKDIR/clone.err"; then
+  clone_ok=1
+else
+  echo "::warning::Clone failed (wiki may be empty or token lacks access):"
   cat "$WORKDIR/clone.err" || true
-  exit 1
+  mkdir -p "$WORKDIR/wiki"
+  cd "$WORKDIR/wiki"
+  git init
+  git checkout -b master
+  git remote add origin "$WIKI_URL"
 fi
 
 cd "$WORKDIR/wiki"
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-# Replace generated content (keep .git only)
-find . -maxdepth 1 -type f -name '*.md' -delete
+# Clear previous pages at repo root
+find . -maxdepth 1 -type f \( -name '*.md' -o -name '_Sidebar.md' -o -name '_Footer.md' \) -delete
 
-# Copy pages; INDEX.md becomes Home.md (Wiki home)
-for f in "$SRC"/*.md; do
+for f in "${PAGES[@]}"; do
   base="$(basename "$f")"
   if [[ "$base" == "INDEX.md" ]]; then
     cp "$f" Home.md
-  else
-    # Prefer Title_Case filenames for readable Wiki URLs
-    # core.md → Core.md
-    stem="${base%.md}"
-    # keep existing Pascal/underscore names; capitalize first letter only if all-lower
-    if [[ "$stem" =~ ^[a-z0-9_]+$ ]]; then
-      out="$(python3 -c "import sys; s=sys.argv[1]; print('_'.join(p.capitalize() for p in s.split('_'))+'.md')" "$stem")"
-    else
-      out="$base"
-    fi
-    cp "$f" "$out"
+    continue
   fi
+  stem="${base%.md}"
+  if [[ "$stem" =~ ^[a-z0-9_]+$ ]]; then
+    out="$(python3 -c "import sys; s=sys.argv[1]; print('_'.join(p.capitalize() for p in s.split('_'))+'.md')" "$stem")"
+  else
+    out="$base"
+  fi
+  cp "$f" "$out"
 done
 
-# Sidebar: list of pages for navigation in the Wiki UI
 {
   echo "## Gaon architecture"
   echo ""
@@ -76,12 +86,31 @@ done
 } > _Sidebar.md
 
 git add -A
-if git diff --staged --quiet; then
+if git diff --staged --quiet 2>/dev/null; then
   echo "Official Wiki already up to date."
   exit 0
 fi
 
 git commit -m "chore(wiki): sync from .wiki-compiler (code-derived)"
-git push origin HEAD:master 2>/dev/null || git push origin HEAD:main
+
+# Default branch for wikis is often master
+set +e
+git push -u origin HEAD:master
+push_master=$?
+if [[ $push_master -ne 0 ]]; then
+  git push -u origin HEAD:main
+  push_main=$?
+else
+  push_main=0
+fi
+set -e
+
+if [[ $push_master -ne 0 && $push_main -ne 0 ]]; then
+  echo "::error::Push to ${OWNER}/${REPO}.wiki.git failed."
+  echo "1) Enable Wikis and open the Wiki tab once in the GitHub UI."
+  echo "2) Add repo secret WIKI_TOKEN = PAT with Contents: Read/Write (classic: repo scope)."
+  echo "   Default GITHUB_TOKEN usually cannot write to the wiki remote."
+  exit 1
+fi
 
 echo "Published to https://github.com/${OWNER}/${REPO}/wiki"
