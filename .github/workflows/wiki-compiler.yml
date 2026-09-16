@@ -26,46 +26,66 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  update-wiki:
+  compile:
+    name: Compile code-derived wiki
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Sync notes from code and compile wiki
+      - name: Compile wiki from repository code
+        run: |
+          set -euo pipefail
+          chmod +x .wiki-compiler/compile.sh
+          bash .wiki-compiler/compile.sh
+          echo "--- compiled pages ---"
+          ls -la .wiki-compiler/wiki | head -50
+          test -f .wiki-compiler/wiki/INDEX.md
+          pages="$(find .wiki-compiler/wiki -maxdepth 1 -name '*.md' | wc -l)"
+          echo "page_count=${pages}"
+          test "$pages" -ge 3
+
+      - name: Upload compiled wiki artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiki-compiler-pages
+          path: |
+            .wiki-compiler/wiki
+            .wiki-compiler/raw_notes
+          retention-days: 14
+
+  publish-github-wiki:
+    name: Publish official GitHub Wiki
+    needs: compile
+    runs-on: ubuntu-latest
+    # Do not fail the whole workflow if Wiki tab / token is not ready
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Recompile (fresh pages for publish)
         run: |
           chmod +x .wiki-compiler/compile.sh
           bash .wiki-compiler/compile.sh
 
-      - name: Detect changes
-        id: diff
-        run: |
-          git add .wiki-compiler/raw_notes .wiki-compiler/wiki
-          if git diff --staged --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit in-repo wiki update
-        if: steps.diff.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(wiki): refresh code-derived wiki [skip ci]"
-          git push
-
-      # Official GitHub Wiki tab: https://github.com/<owner>/<repo>/wiki
-      - name: Publish to official GitHub Wiki
+      - name: Publish to GitHub Wiki tab
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer a classic/fine-grained PAT with wiki write; GITHUB_TOKEN often cannot push *.wiki.git
+          GH_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           chmod +x .wiki-compiler/scripts/publish_github_wiki.sh
